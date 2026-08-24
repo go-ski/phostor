@@ -2,7 +2,7 @@
 
 **An app that adds stories to photos.**
 
-A room of people looks at old photographs on a large screen and talks about
+Family, friends, and relatives look at photographs on a screen and talk about
 them: who is in them, where they were taken, what was happening, how everyone
 is related. That conversation is the valuable thing in the room, and it is lost
 the moment the evening ends. The photographs will outlive everyone present.
