@@ -4,9 +4,9 @@
 
 Family, friends, and relatives look at photographs on a screen and talk about
 them: who is in them, where they were taken, what was happening, how everyone
-is related. That conversation is the valuable thing in the room, and it is lost
-the moment the evening ends. The photographs will outlive everyone present.
-What the people present know about them will not.
+is related. That conversation is the valuable thing in the room, and it may be
+lost over time. The photographs will outlive everyone present but the memories 
+may not.
 
 phostor shows the photographs, records the talk, and writes each visit down.
 
@@ -41,10 +41,9 @@ app, and `pkgload` to run `exec/phostor` against an uninstalled source tree.
 
 **Use Chrome or Firefox.** Recording needs `MediaRecorder` with Opus in WebM.
 Both have it, and both are tested end to end. **Safari does not** — it records
-fragmented MP4, whose chunks do not concatenate into a playable file — and
-phostor says so on screen rather than letting you find out at the end of the
-evening. `ph_app()` opens a browser that can record in preference to your
-system default, and tells you which one it opened.
+fragmented MP4, whose chunks do not concatenate into a playable file. `ph_app()` 
+opens a browser that can record in preference to your system default, and tells 
+you which one it opened.
 
 ### If recording fails, it is almost certainly the operating system
 
