@@ -1,0 +1,80 @@
+# phostor -- an app that adds stories to photos.
+#
+# This file IS the project: the directory holding it is the work directory, and
+# everything phostor writes for this collection lives beside it. To keep a
+# second collection, make a second directory with its own config.yml.
+#
+# Edit this file with any text editor. Nothing here is written back by phostor.
+
+# ---------------------------------------------------------------------------
+# The only path you must set.
+# ---------------------------------------------------------------------------
+
+# The directory of photographs, which phostor treats as read-only and never
+# writes to. It must not contain, be contained by, or be the same as the
+# directory this file is in; phostor refuses to start otherwise.
+photo_root: ~/photos
+
+# Shown in the browser title bar, and recorded in each sitting's session.yml.
+title: Photographs
+
+# ---------------------------------------------------------------------------
+# Display. Both are pre-rendered once, for every photo, before the app starts.
+# ---------------------------------------------------------------------------
+
+# Longest edge of the display copy, in pixels. 2048 is comfortable on a large
+# screen; raise it for a 4K television, lower it if rendering takes too long.
+display_size: 4096
+
+# Longest edge of the thumbnail shown in the folder tree.
+thumb_size: 256
+
+# ---------------------------------------------------------------------------
+# Recording.
+# ---------------------------------------------------------------------------
+
+# A visit shorter than this many seconds is logged in the sitting's path.tsv
+# but writes no sidecar and no audio -- so paging past forty photos looking for
+# one does not leave forty empty records behind. Set it to 0 to keep every
+# visit, however brief.
+min_visit_seconds: 2
+
+# Seconds of audio per uploaded chunk. Each chunk is written to disk as it
+# arrives, so this is also how much a crash can cost you. Smaller means more
+# round trips; anything in this range is imperceptible.
+chunk_seconds: 5
+
+# ---------------------------------------------------------------------------
+# Which files count as photographs.
+# ---------------------------------------------------------------------------
+
+# Extensions to index, lowercased and without the dot. Matching is
+# case-insensitive, so `jpg` covers `.JPG`.
+extensions:
+  - jpg
+  - jpeg
+  - jpe
+  - png
+  - gif
+  - bmp
+  - tif
+  - tiff
+  - webp
+  - heic
+  - heif
+  - avif
+
+# Directory and file names never to index, at any depth.
+cruft:
+  - "@eaDir"
+  - "#recycle"
+  - "#snapshot"
+  - "@tmp"
+  - ".@__thumb"
+  - "@sharebin"
+  - .DS_Store
+  - Thumbs.db
+  - .Spotlight-V100
+  - .TemporaryItems
+  - .Trashes
+  - .fseventsd

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Thin wrapper: all logic lives in the R package. Uses the installed phostor if
+# present, otherwise load_all()s the surrounding source tree.
+#
+# Installed to <library>/phostor/exec/phostor (R marks exec/ scripts mode 755).
+# Symlink it onto your PATH:
+#   ln -s "$(Rscript -e 'cat(system.file("exec", "phostor", package = "phostor"))')" ~/bin/phostor
+set -euo pipefail
+
+# Only a source checkout has a DESCRIPTION one level up; the installed copy sits
+# inside the library, where load_all() would be wrong. Leaving PHOSTOR_SRC empty
+# there makes the R below fall through to library(phostor).
+here="$(cd "$(dirname "$0")" && pwd)"
+root="$(dirname "$here")"
+if [[ -f "$root/DESCRIPTION" ]]; then
+  export PHOSTOR_SRC="$root"
+else
+  export PHOSTOR_SRC=""
+fi
+
+exec Rscript -e '
+  src <- Sys.getenv("PHOSTOR_SRC")
+  if (requireNamespace("phostor", quietly = TRUE)) {
+    library(phostor)
+  } else if (nzchar(src) && requireNamespace("pkgload", quietly = TRUE)) {
+    pkgload::load_all(src, quiet = TRUE)
+  } else {
+    stop("Install phostor (devtools::install()) or the pkgload package.")
+  }
+  ph_cli(commandArgs(trailingOnly = TRUE))
+' "$@"

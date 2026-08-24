@@ -1,0 +1,11 @@
+{
+  "name": "phostor-browser-tests",
+  "private": true,
+  "description": "Opt-in end-to-end tests for phostor's browser half. Not part of the R package.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0"
+  }
+}
