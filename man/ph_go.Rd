@@ -15,8 +15,8 @@ ph_go(config = NULL, ...)
 Whatever \code{\link[=ph_app]{ph_app()}} returns, invisibly.
 }
 \description{
-Indexes, renders and then starts the Shiny app -- the one call that takes a
-fresh work directory to a running sitting.
+Indexes, renders and then starts the Shiny app: one call from a fresh work
+directory to a running session.
 }
 \examples{
 \dontrun{

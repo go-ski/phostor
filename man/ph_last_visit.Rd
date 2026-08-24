@@ -15,8 +15,8 @@ ph_last_visit(cfg, rel_path)
 A sidecar list, or \code{NULL}.
 }
 \description{
-Used to seed the tag fields, so a second visit starts from what the room
-already established rather than from blank.
+Used to seed the tag fields, so a second visit starts from the previous
+visit's values rather than blank.
 }
 \examples{
 \dontrun{

@@ -13,9 +13,8 @@ ph_orphan_audio(config = NULL)
 A character vector of paths.
 }
 \description{
-A \code{.part} file is what an interrupted visit leaves: the audio up to the
-moment the process stopped. They are playable, and phostor never deletes
-them on its own.
+A \code{.part} file holds the audio an interrupted visit recorded up to the
+point the process stopped. It is playable, and phostor does not delete it.
 }
 \examples{
 \dontrun{

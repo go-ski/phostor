@@ -9,8 +9,8 @@ test_that("preflight and SystemRequirements never drift apart", {
   }
 })
 
-test_that("preflight claims no tool phostor does not actually run", {
-  # A checker that reports on tools nothing calls is a checker nobody trusts.
+test_that("preflight reports only tools phostor invokes", {
+  # Preflight should not report on tools the package never invokes.
   app <- app_file()
   skip_if(is.null(app), "app.R not reachable")
   src <- c(package_source(), readLines(app))
@@ -24,11 +24,11 @@ test_that("preflight reports without throwing", {
   expect_type(suppressMessages(ph_preflight(quiet = TRUE)), "logical")
 })
 
-test_that("preflight reports the browsers, and which one would open", {
+test_that("preflight reports the browsers and which one would open", {
   msgs <- paste(capture_messages(ph_preflight()), collapse = "\n")
   expect_match(msgs, "browsers")
-  # The trap that cost a sitting: the system default was a browser macOS had
-  # denied the microphone, and the app opened there without saying so.
+  # The system default may be a browser that macOS has denied microphone
+  # access, so preflight names which browser would open.
   expect_match(msgs, "default")
   expect_match(msgs, "Microphone")     # names the settings pane to check
   expect_match(msgs, "quit and reopen")

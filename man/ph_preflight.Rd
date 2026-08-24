@@ -15,10 +15,9 @@ reported.}
 invisibly.
 }
 \description{
-\code{vipsthumbnail} is the one hard requirement: without it there is nothing to
-display. \code{exiftool} is optional -- its absence costs capture dates and
-dimensions, not the sitting. Shiny and bslib are reported too, since the app
-is the point.
+\code{vipsthumbnail} is the only hard requirement: without it there is nothing to
+display. \code{exiftool} is optional; without it capture dates and dimensions are
+blank. Shiny and bslib are reported as well.
 }
 \examples{
 ph_preflight(quiet = TRUE)

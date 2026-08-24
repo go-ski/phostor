@@ -10,9 +10,9 @@ ph_browser_default()
 A browser name, or \code{NA_character_}.
 }
 \description{
-Best-effort and macOS-only: it reads the LaunchServices handler for \code{https}.
-Returns \code{NA_character_} rather than guessing when it cannot tell -- which is
-the honest answer, and the one \code{\link[=ph_preflight]{ph_preflight()}} reports.
+Best-effort and macOS-only: reads the LaunchServices handler for \code{https}.
+Returns \code{NA_character_} when it cannot tell, which is what
+\code{\link[=ph_preflight]{ph_preflight()}} reports.
 }
 \examples{
 ph_browser_default()

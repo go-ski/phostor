@@ -1,5 +1,5 @@
-# Fixture photographs are generated, never committed: the repository holds no
-# images, and the fixtures cannot drift away from the tools that read them.
+# Fixture photographs are generated, not committed: the repository holds no
+# images, and the fixtures cannot drift from the tools that read them.
 
 have_vips <- function() nzchar(Sys.which("vips"))
 have_vipsthumbnail <- function() nzchar(Sys.which("vipsthumbnail"))
@@ -8,9 +8,9 @@ skip_without_vips <- function() {
   testthat::skip_if_not(have_vips(), "vips not installed")
 }
 
-# A small nested photo directory. Names are deliberately awkward: a space, an
-# ampersand that must be escaped into HTML, a nested directory, cruft that must
-# be skipped and a non-photograph that must be ignored.
+# A small nested photo directory with awkward names: a space, an ampersand
+# that must be escaped into HTML, a nested directory, cruft that must be
+# skipped, and a non-photograph that must be ignored.
 make_photos <- function(dir = tempfile("photos-")) {
   skip_without_vips()
   dir.create(file.path(dir, "Trips", "Skye"), recursive = TRUE)
@@ -46,8 +46,8 @@ make_project <- function(index = TRUE, render = FALSE) {
   list(work = work, photos = photos, cfg = cfg)
 }
 
-# Every path under `dir`, with its size and mtime. The read-only invariant is
-# checked by comparing this before and after.
+# Every path under `dir`, with its size and mtime. Compared before and after
+# to check the photo directory was not modified.
 fs_snapshot <- function(dir) {
   f <- sort(list.files(dir, recursive = TRUE, all.files = TRUE, no.. = TRUE))
   if (!length(f)) return(data.frame())
@@ -56,15 +56,15 @@ fs_snapshot <- function(dir) {
              stringsAsFactors = FALSE)
 }
 
-# ph_init() warns when photo_root does not exist yet, which is right in real
-# use and noise in tests that are about something else.
+# ph_init() warns when photo_root does not exist yet, which is noise in tests
+# that are about something else.
 quiet_init <- function(...) suppressWarnings(suppressMessages(ph_init(...)))
 
 # --- reaching the package's own files from wherever the suite is running ----
 #
 # Under test_local() the source tree is two levels up. Under R CMD check the
-# tests run from <pkg>.Rcheck/tests and only the INSTALLED package exists. Any
-# test that reads phostor's own files has to cope with both.
+# tests run from <pkg>.Rcheck/tests, where only the installed package exists.
+# Any test that reads phostor's own files must handle both.
 
 first_path <- function(...) {
   for (p in c(...)) if (nzchar(p) && file.exists(p)) return(p)

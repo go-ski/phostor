@@ -1,7 +1,7 @@
 # What phostor needs on the machine, checked in one report.
 #
-# The lists below and DESCRIPTION's SystemRequirements are two statements of
-# the same fact, and a test asserts they never drift apart.
+# The lists below and DESCRIPTION's SystemRequirements state the same set of
+# tools; a test asserts they agree.
 
 ph_pf_required <- c(
   vipsthumbnail = "install libvips (brew install vips)"
@@ -19,10 +19,9 @@ ph_pf_line <- function(status, name, detail = "", quiet = FALSE) {
 
 #' Check that the tools and packages phostor needs are present.
 #'
-#' `vipsthumbnail` is the one hard requirement: without it there is nothing to
-#' display. `exiftool` is optional -- its absence costs capture dates and
-#' dimensions, not the sitting. Shiny and bslib are reported too, since the app
-#' is the point.
+#' `vipsthumbnail` is the only hard requirement: without it there is nothing to
+#' display. `exiftool` is optional; without it capture dates and dimensions are
+#' blank. Shiny and bslib are reported as well.
 #'
 #' @param quiet Suppress the per-tool report. Missing requirements are still
 #'   reported.
@@ -62,10 +61,10 @@ ph_preflight <- function(quiet = FALSE) {
                quiet = quiet)
   }
 
-  # The recording half lives in the browser, where no R-side check can see it.
-  # What R *can* see is which browsers exist and which one the system would
-  # open -- the trap that cost a whole sitting: the default was a browser
-  # macOS had denied microphone access, and the app opened there silently.
+  # Recording happens in the browser, which no R-side check can inspect. R can
+  # see which browsers are installed and which one the system would open, and
+  # the system default may be one that cannot record or has been denied
+  # microphone access.
   if (!quiet) message("== browsers ==")
   have <- ph_browser_apps[dir.exists(ph_browser_apps)]
   for (nm in names(have)) {

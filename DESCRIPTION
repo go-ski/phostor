@@ -4,16 +4,15 @@ Version: 0.1.0
 Authors@R:
     person("George", "Ostrouchov", role = c("aut", "cre"),
            email = "go@tennessee.edu")
-Description: Records stories for a collection of photos in a directory - a perfect
-    app to bring photos to life with your family, friends, and relatives.
-    A Shiny app shows the folder tree of a read-only photo directory, displays
-    any photo on a click, and captures the conversation about it as audio.
-    Every visit to a photo writes its own sidecar beside that photo's record --
-    audio, the names the room supplied, and the place, event and date they
-    settled on -- so revisiting a photo adds to its history. The route through
-    the photos is logged as it happens, and
-    a Play button replays the whole sitting: the same photos, in the same
-    order, with the same voices. The photo directory is never written to.
+Description: Records spoken commentary about a collection of photos. A Shiny
+    app shows the folder tree of a read-only photo directory, displays any
+    photo on a click, and records the conversation about it as audio. Each
+    visit to a photo writes its own sidecar file holding the audio, the names
+    given, and a place, event and date, so a later visit adds to a photo's
+    history rather than replacing it. The order photos were viewed in is
+    logged as it happens, and a Play button replays a session: the same
+    photos, in the same order, with the same audio. The photo directory is
+    never written to.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

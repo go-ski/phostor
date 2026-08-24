@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# End-to-end tests for phostor's browser half -- the microphone, MediaRecorder,
+# End-to-end tests for phostor's browser code: the microphone, MediaRecorder,
 # the chunk upload and the playback clock. None of it is reachable from the R
-# suite, which fakes the browser entirely.
+# suite, which substitutes for the browser.
 #
 # Opt-in and developer-only: needs Node and a one-time `npm install` here.
 # `.Rbuildignore` keeps it out of the package, so R CMD check never sees it.
@@ -12,12 +12,12 @@
 #
 # Chrome is used as installed. Firefox needs Playwright's own build:
 #   npx --prefix tests/browser playwright install firefox
-# If it is absent, Firefox is skipped and said so, rather than failing.
+# If it is absent, Firefox is skipped with a note rather than failing.
 #
-# Each browser gets its OWN photo collection, work directory and phostor
-# instance. The specs assert on files -- "three sidecars exist" -- so sharing a
-# work directory between browsers would have the second one counting the
-# first's recordings.
+# Each browser gets its own photo collection, work directory and phostor
+# instance. The specs assert on files ("three sidecars exist"), so a shared
+# work directory would have the second browser counting the first's
+# recordings.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -47,7 +47,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# Which browsers can we actually drive?
+# Which browsers are available to drive?
 projects=(chrome)
 if [ -d "$HOME/Library/Caches/ms-playwright" ] &&
    ls "$HOME/Library/Caches/ms-playwright" 2>/dev/null | grep -q '^firefox-'; then
@@ -76,8 +76,8 @@ for proj in "${projects[@]}"; do
   gen "$photos/Prague/square.png"    360 360
   rm -f "$photos/_t.v"
 
-  # Every byte of the collection, so the read-only invariant can be proved
-  # after a browser has driven a whole sitting against it.
+  # Hash the collection so it can be compared after a browser has driven a
+  # sitting against it.
   before="$tmp/$proj-before.sha"
   find "$photos" -type f -exec shasum -a 256 {} \; | sort > "$before"
 

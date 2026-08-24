@@ -1,16 +1,14 @@
-# The folder tree that IS the sidebar.
+# The folder tree shown in the sidebar.
 #
-# Built by pasting escaped HTML strings rather than with div()/span(). That is
-# dundee's lesson, paid for on a real library: tag objects cost seconds per
-# render where string pasting costs milliseconds for byte-identical output. It
-# matters less at 200 photographs than at 35,000, but the tree is rendered once
-# per session precisely so that clicking a photograph never rebuilds it, and
-# that discipline is easier to keep than to retrofit.
+# HTML is pasted as escaped strings rather than built with div()/span(): tag
+# objects cost seconds per render against milliseconds for identical output
+# (measured in dundee at 35,000 rows). The tree is rendered once per session
+# and the selection highlight is moved client-side.
 #
-# Nesting uses <details>/<summary>, so directories open and close with no
-# JavaScript, no tree library, and working keyboard navigation for free.
+# Nesting uses <details>/<summary>: no JavaScript, no tree library, and
+# keyboard navigation comes with the elements.
 #
-# One onclick for every photograph sets ONE global input. Per-row observeEvent()
+# All the photograph onclicks set one global input. Per-row observeEvent()
 # handlers accumulate and leak; a single input does not.
 
 #' Escape text for HTML.
@@ -25,10 +23,9 @@
 #' ph_escape("Tom & <Jerry>")
 #' @export
 ph_escape <- function(x) {
-  # attribute = TRUE also escapes the two quote characters. htmlEscape()
-  # defaults to FALSE, which is safe for element text and not for an attribute;
-  # having one function that is always safe is worth more than the two
-  # characters it saves, and it keeps this identical to the fallback below.
+  # attribute = TRUE also escapes the quote characters. htmlEscape() defaults
+  # to FALSE, which is safe for element text but not for an attribute value.
+  # One always-safe function, matching the fallback below.
   if (requireNamespace("htmltools", quietly = TRUE)) {
     return(as.character(htmltools::htmlEscape(x, attribute = TRUE)))
   }
@@ -59,9 +56,8 @@ ph_url_path <- function(rel) {
 
 #' How many recorded visits each photograph already has.
 #'
-#' Counts written sidecars only. An interrupted visit's `.part` file still
-#' reserves its number (see [ph_next_visit()]) but is not a visit yet, and
-#' showing it as one in the tree would be a lie.
+#' Counts written sidecars only. An interrupted visit's `.part` file reserves
+#' its number (see [ph_next_visit()]) but is not a recorded visit.
 #'
 #' @param cfg A config list from [ph_config()].
 #' @param rel_paths Photographs to count, relative to `photo_root`.
@@ -103,9 +99,8 @@ ph_tree_html <- function(idx, counts = NULL, open_depth = 1L) {
   if (!nrow(idx)) {
     return("<p class=\"ph-empty\">No photographs indexed yet.</p>")
   }
-  # C-locale byte order guarantees that every path sharing a directory prefix
-  # is contiguous, which is what lets the open/close walk below be a single
-  # pass with no lookahead.
+  # C-locale byte order makes every path sharing a directory prefix
+  # contiguous, so the open/close walk below is one pass with no lookahead.
   ord <- order(idx$rel_path, method = "radix")
   idx <- idx[ord, , drop = FALSE]
   if (!is.null(counts)) counts <- counts[ord] else counts <- rep(0L, nrow(idx))
@@ -134,11 +129,11 @@ ph_tree_html <- function(idx, counts = NULL, open_depth = 1L) {
     nvis <- as.integer(counts[i])
     out <- c(out, paste0(
       "<div id=\"ph-p-", id, "\" class=\"ph-p\"",
-      # One handler for the whole tree, however many photographs there are.
+      # One handler for the tree, regardless of row count.
       " onclick=\"Shiny.setInputValue(&#39;photo_pick&#39;,", id,
       ",{priority: &#39;event&#39;})\">",
-      # loading="lazy" keeps a few hundred thumbnails from being fetched all
-      # at once when the tree first paints.
+      # loading="lazy": otherwise every thumbnail is fetched when the tree
+      # first paints.
       "<img class=\"ph-t\" loading=\"lazy\" alt=\"\" src=\"thumbs/", id,
       ".jpg\">",
       "<span class=\"ph-n\">", ph_escape(idx$name[i]), "</span>",

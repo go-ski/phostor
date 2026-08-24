@@ -6,7 +6,7 @@ test_that("the work directory is the directory config.yml is in", {
   expect_equal(cfg$work_dir, ph_resolve_path(work))
   expect_equal(cfg$index_file, file.path(cfg$work_dir, "index.tsv"))
   expect_equal(cfg$sidecar_dir, file.path(cfg$work_dir, "sidecars"))
-  # There is no work_dir key to get out of step with reality.
+  # There is no work_dir key that could disagree with the actual location.
   expect_false("work_dir" %in% names(ph_config_defaults()))
 })
 
@@ -39,8 +39,8 @@ test_that("overlap is caught on load, not only on init", {
 })
 
 test_that("overlap detection folds case where the filesystem does", {
-  # ph_paths_overlap() is the guard; test it directly so the result does not
-  # depend on which filesystem tempdir() happens to be on.
+  # ph_paths_overlap() is the guard; tested directly so the result does not
+  # depend on which filesystem tempdir() is on.
   a <- "/Volumes/Photo/lib"
   expect_true(ph_paths_overlap(a, a))
   expect_true(ph_paths_overlap(a, "/Volumes/Photo"))
@@ -54,15 +54,15 @@ test_that("overlap detection folds case where the filesystem does", {
   expect_true(ph_path_under("/a/b", "/a/b"))
   expect_false(ph_path_under("/a/b", "/a/b/c"))
 
-  # A case-differing prefix is one directory on APFS and two elsewhere; the
-  # answer must follow the filesystem, not the string.
+  # A case-differing prefix is one directory on APFS and two elsewhere, so the
+  # answer must follow the filesystem rather than the string.
   if (ph_fs_case_insensitive(tempdir())) {
     expect_true(ph_paths_overlap(file.path(tempdir(), "Photo"),
                                  file.path(tempdir(), "photo")))
   }
 })
 
-test_that("a hand-edited typo is named rather than silently defaulted", {
+test_that("an unknown config key is named rather than silently defaulted", {
   work <- tempfile("work-")
   quiet_init(work, photo_root = tempfile("photos-"))
   f <- file.path(work, "config.yml")
@@ -84,7 +84,7 @@ test_that("invalid values are all reported at once", {
   expect_match(err, "thumb_size")
 })
 
-test_that("an empty or non-mapping config is handled, not crashed on", {
+test_that("an empty or non-mapping config is handled without an error", {
   work <- tempfile("work-")
   dir.create(work, recursive = TRUE)
   writeLines(character(0), file.path(work, "config.yml"))

@@ -16,9 +16,8 @@ A list of two equal-length character vectors, \code{value} and \code{source}.
 }
 \description{
 \code{DateTimeOriginal} is the date the photograph was taken. \code{CreateDate} is
-often the date a scan or an export was made, so when it is all there is the
-app says which one it is showing rather than presenting a scanning date as
-if it were 1974.
+often the date of a scan or export, so when it is the only value available
+the app labels which field it is showing.
 }
 \examples{
 ph_capture_date(c("1974:07:03 14:22:01", NA), c(NA, "2011:02:02 09:00:00"))

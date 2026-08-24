@@ -1,8 +1,7 @@
 test_that("usage names every command the dispatcher handles", {
   msgs <- capture_messages(ph_cli_usage())
   txt <- paste(msgs, collapse = "\n")
-  # The switch() in ph_cli() and the usage text are two statements of the same
-  # list, and a command documented but not dispatched is worse than neither.
+  # The switch() in ph_cli() and the usage text list the same commands.
   for (cmd in c("init", "index", "render", "app", "go", "status", "preflight")) {
     expect_match(txt, paste0("\\b", cmd, "\\b"))
   }

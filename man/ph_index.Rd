@@ -20,13 +20,12 @@ before, reads capture dates and dimensions in a single \code{exiftool} call, and
 writes \code{index.tsv}.
 }
 \details{
-Ids are \strong{stable}: a photograph keeps the id it was first given, and a new
-one takes the next number up. Nothing is keyed by position in the file, so
-adding photographs never renumbers the rendered copies of the old ones.
+Ids are stable: a photograph keeps the id it was first given, and a new one
+takes the next number up. Nothing is keyed by position in the file, so
+adding photographs does not renumber the rendered copies of existing ones.
 
-Photographs that have disappeared from \code{photo_root} drop out of the
-catalogue. Their sidecars are left exactly where they are -- what was said
-about a photograph outlives the file.
+Photographs no longer present in \code{photo_root} drop out of the catalogue.
+Their sidecars are left in place.
 }
 \examples{
 \dontrun{

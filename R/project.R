@@ -12,15 +12,14 @@
 # directory per read-only photo directory, so a second collection is a second
 # directory rather than a second set of paths to keep in step.
 #
-# The path helpers below are ported from dundee, where the same read-only
-# guarantee is the central invariant. They are the safety property of the whole
-# design and are deliberately unchanged.
+# The path helpers below are ported unchanged from dundee, which has the same
+# read-only requirement. They are what enforces it.
 
 `%||%` <- function(a, b) if (is.null(a)) b else a
 na_if_empty <- function(x) if (length(x) && nzchar(x)) x else NULL
 
 # packageVersion() errors when R/ has been source()d rather than installed
-# (tests/testthat/setup.R). Never let provenance break a dev run.
+# (tests/testthat/setup.R), so provenance must not depend on it.
 ph_pkg_version <- function() {
   tryCatch(as.character(utils::packageVersion("phostor")),
            error = function(e) "source")
@@ -35,8 +34,8 @@ ph_derived_keys <- c("index_file", "display_dir", "thumb_dir", "sessions_dir",
 # path utilities
 # ---------------------------------------------------------------------------
 
-# normalizePath() that resolves symlinks in whatever prefix already exists,
-# without creating anything -- config loading must not mutate the filesystem.
+# normalizePath() that resolves symlinks in whatever prefix already exists
+# without creating anything: config loading must not mutate the filesystem.
 ph_resolve_path <- function(p) {
   if (is.null(p) || !length(p) || !nzchar(p)) return(p)
   p <- path.expand(p)
@@ -56,8 +55,8 @@ ph_resolve_path <- function(p) {
 
 # Case-insensitive filesystems (APFS/HFS+ on macOS, SMB mounts) defeat a plain
 # prefix test: /Volumes/Photo and /Volumes/photo are one directory. Probe the
-# filesystem the paths actually live on -- tempdir() is often a different one --
-# and cache per directory, since ph_config() is called on every command.
+# filesystem the paths live on (tempdir() is often a different one) and cache
+# per directory, since ph_config() is called on every command.
 ph_case_cache <- new.env(parent = emptyenv())
 
 ph_flip_case <- function(x) {
@@ -65,10 +64,9 @@ ph_flip_case <- function(x) {
          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", x)
 }
 
-# Read-only by construction: this runs on photo_root, whose mtime must not
-# move. Never probe by writing a test file. Instead take an existing entry
-# whose name changes under a case flip and ask whether the flipped name still
-# resolves.
+# Runs on photo_root, whose mtime must not change, so it must not probe by
+# writing a test file. Instead it takes an existing entry whose name changes
+# under a case flip and checks whether the flipped name still resolves.
 ph_fs_case_insensitive <- function(path = tempdir()) {
   dir <- path
   while (!dir.exists(dir) && dirname(dir) != dir) dir <- dirname(dir)
@@ -87,15 +85,15 @@ ph_fs_case_insensitive <- function(path = tempdir()) {
     file.exists(file.path(dir, flipped[cased][[1]]))
   } else {
     # Empty directory, or no entry carries a letter: fall back to the platform
-    # default (APFS/HFS+ are case-insensitive unless deliberately formatted).
+    # default (APFS/HFS+ are case-insensitive unless formatted otherwise).
     identical(Sys.info()[["sysname"]], "Darwin")
   }
   assign(key, res, envir = ph_case_cache)
   res
 }
 
-# Does either path contain the other? This is the work_dir vs photo_root
-# question, and the case folding is what makes it correct on APFS.
+# Does either path contain the other? This is the work_dir vs photo_root test.
+# The case folding is what makes it correct on APFS.
 ph_paths_overlap <- function(a, b) {
   if (is.null(a) || is.null(b) || !length(a) || !length(b) ||
       !nzchar(a) || !nzchar(b)) return(FALSE)
@@ -312,9 +310,9 @@ ph_config_source <- function(x = NULL) {
   list(file = x, work_dir = ph_resolve_path(dirname(x)))
 }
 
-# config.yml is hand-edited, so a typo (thumb_sze:) is the likeliest error
-# there is, and the silent version of it -- run completes, default used -- is
-# the most expensive. Name it, and guess what was meant.
+# config.yml is hand-edited, so a typo (thumb_sze:) is a likely error, and it
+# fails silently: the run completes with the default. Name the key and guess
+# what was meant.
 ph_check_keys <- function(user, defaults) {
   known <- c(names(defaults), "work_dir", ph_derived_keys)
   bad <- setdiff(names(user), known)
@@ -328,8 +326,8 @@ ph_check_keys <- function(user, defaults) {
   invisible(bad)
 }
 
-# Type/range validation reported all at once, rather than as whatever error the
-# first bad value happens to trigger two commands later.
+# Type and range validation, reported all at once rather than as whatever
+# error the first bad value triggers two commands later.
 ph_validate <- function(cfg) {
   err <- character(0)
   num <- function(k, lo, hi) {
@@ -406,9 +404,8 @@ ph_config <- function(config = NULL, require_photos = FALSE, create = TRUE) {
   }
   cfg$photo_root <- ph_resolve_path(cfg$photo_root)
 
-  # The whole safety property in four lines. Everything phostor writes goes
-  # under work_dir, so as long as work_dir and photo_root are disjoint, the
-  # photographs cannot be touched.
+  # Everything phostor writes goes under work_dir, so keeping work_dir and
+  # photo_root disjoint is what makes the photo directory read-only.
   if (ph_paths_overlap(cfg$photo_root, cfg$work_dir)) {
     stop("phostor: work_dir must not be the same as, nested inside, or ",
          "contain photo_root.\n  photo_root: ", cfg$photo_root,
@@ -438,9 +435,9 @@ ph_as_config <- function(config = NULL, ...) {
 # ---------------------------------------------------------------------------
 
 # Called at the top of each command. Writes the resolved config into work_dir
-# -- provenance, and a stable absolute-path file for ph_app(), which chdirs.
-# Only user-facing keys are written, so re-reading it is warning-free; derived
-# paths go in the comment header.
+# as a record of what ran, and as a stable absolute-path file for ph_app(),
+# which chdirs. Only user-facing keys are written, so re-reading it raises no
+# unknown-key warning; derived paths go in the comment header.
 ph_config_snapshot <- function(cfg) {
   out <- file.path(cfg$work_dir, "config.resolved.yml")
   keep <- c(names(ph_config_defaults()), "work_dir")
@@ -456,8 +453,7 @@ ph_config_snapshot <- function(cfg) {
   invisible(out)
 }
 
-# Human-readable confirmation of what was loaded -- the fastest way to catch
-# "I edited the wrong project's config".
+# Confirmation of what was loaded, to catch a config from the wrong project.
 ph_config_report <- function(cfg) {
   message("phostor project: ", basename(cfg$work_dir))
   message("  photo_root : ", cfg$photo_root %||% "<unset>",

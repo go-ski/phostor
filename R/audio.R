@@ -1,18 +1,13 @@
 # Audio assembly.
 #
-# The browser records with MediaRecorder and hands us the stream in chunks. We
-# write each chunk to disk the moment it arrives, appending to a `.part` file,
-# and rename to the final name only when the visit closes cleanly. Two things
-# follow from that:
+# The browser records with MediaRecorder and sends the stream in chunks. Each
+# chunk is appended to a `.part` file as it arrives, and renamed to the final
+# name when the visit closes. So a crash loses at most one chunk, and a `.part`
+# file left behind marks an interrupted visit whose sidecar was never written.
 #
-#   * a crash costs at most one chunk, not the evening; and
-#   * a `.part` file left behind is unambiguously an interrupted visit, so no
-#     sidecar ever claims audio that is not there.
-#
-# Chunks from a single MediaRecorder concatenate into a valid WebM, which is
-# why this works without ffmpeg or any other muxing step. It is also why the
-# app pins the recorder to one format and refuses to stitch chunks from a
-# browser that cannot supply it -- see inst/shiny/app.R.
+# Chunks from a single MediaRecorder concatenate into a valid WebM, so no
+# ffmpeg or muxing step is needed. The app pins the recorder to one format for
+# the same reason -- see inst/shiny/app.R.
 
 #' Open a visit's audio file.
 #'
@@ -30,10 +25,9 @@ ph_audio_open <- function(cfg, rel_path, visit, ext = "webm") {
   dir <- ph_visit_dir(cfg, rel_path, create = TRUE)
   part <- file.path(dir, paste0(ph_visit_stem(visit), ".", ext, ".part"))
   if (file.exists(part)) unlink(part)
-  # Created empty, immediately, rather than on the first chunk. The file is
-  # what reserves this visit number on disk: without it, leaving a photograph
-  # and coming straight back -- before any audio has arrived -- would compute
-  # the same number twice and the second visit would overwrite the first.
+  # Created empty rather than on the first chunk: the file reserves this visit
+  # number on disk. Without it, leaving a photograph and returning before any
+  # audio arrived would compute the same number twice.
   file.create(part)
   part
 }
@@ -59,10 +53,9 @@ ph_audio_append <- function(part, b64) {
 
 #' Close a visit's audio file.
 #'
-#' Renames the `.part` file to its final name. An empty or absent `.part` --
-#' the microphone was never armed, or the visit was too short to produce a
-#' chunk -- yields `NA` and leaves no file behind, so the sidecar records no
-#' audio rather than pointing at silence.
+#' Renames the `.part` file to its final name. An empty or absent `.part`
+#' (the microphone was never armed, or the visit was too short to produce a
+#' chunk) returns `NA` and leaves no file, so the sidecar records no audio.
 #'
 #' @param part A path from [ph_audio_open()].
 #' @return The final filename (basename only, as stored in the sidecar), or
@@ -100,9 +93,8 @@ ph_audio_discard <- function(part) {
 
 #' Interrupted visits left behind in a project.
 #'
-#' A `.part` file is what an interrupted visit leaves: the audio up to the
-#' moment the process stopped. They are playable, and phostor never deletes
-#' them on its own.
+#' A `.part` file holds the audio an interrupted visit recorded up to the
+#' point the process stopped. It is playable, and phostor does not delete it.
 #'
 #' @param config A work directory, a config path, or a config list.
 #' @return A character vector of paths.
@@ -116,7 +108,7 @@ ph_orphan_audio <- function(config = NULL) {
   if (!dir.exists(cfg$sidecar_dir)) return(character(0))
   f <- list.files(cfg$sidecar_dir, pattern = "\\.part$", recursive = TRUE,
                   full.names = TRUE)
-  # A zero-byte .part is a visit that opened and closed with nothing said, not
-  # an interruption worth reporting.
+  # A zero-byte .part is a visit that opened and closed without recording, not
+  # an interruption.
   f[file.size(f) > 0]
 }

@@ -2,26 +2,22 @@
 
 **An app that adds stories to photos.**
 
-Family, friends, and relatives look at photographs on a screen and talk about
-them: who is in them, where they were taken, what was happening, how everyone
-is related. That conversation is the valuable thing in the room, and it may be
-lost over time. The photographs will outlive everyone present but the memories 
-may not.
-
-phostor shows the photographs, records the talk, and writes each visit down.
+People look at photographs on a screen and talk about them: who is in them,
+where they were taken, what was happening, how everyone is related. phostor
+displays the photographs, records that conversation, and writes each visit to
+disk.
 
 - The folder tree of a read-only photo directory is the sidebar. Click any
   photograph to show it.
 - Start a sitting and the microphone stays live. Segments start and stop by
   themselves as photographs change, so nobody has to remember to press anything.
-- Every visit to a photograph writes its own sidecar beside that photograph's
-  record — the audio, the names the room supplied, and the place, event and
-  date they settled on.
-- Coming back to a photograph later adds a second visit. Nothing is overwritten:
-  the room hears what was said last time and corrects it.
-- The route through the evening is logged as it happens.
-- **Play** replays the whole sitting — the same photographs, in the same order,
-  with the same voices.
+- Every visit to a photograph writes its own sidecar file holding the audio,
+  the names given, and a place, event and date.
+- Returning to a photograph later adds a second visit. Nothing is overwritten,
+  and the earlier audio can be played back and corrected.
+- The order photographs were viewed in is logged as it happens.
+- **Play** replays a sitting: the same photographs, in the same order, with the
+  same audio.
 
 **The photo directory is never written to.** phostor refuses to start if its
 work directory is the same as, inside, or contains the photographs.
@@ -32,35 +28,36 @@ work directory is the same as, inside, or contains the photographs.
 brew install vips exiftool
 ```
 
-`vipsthumbnail` (part of libvips) is the one hard requirement: it renders the
-display copies, and without it there is nothing to show. `exiftool` is optional
-— without it, capture dates and dimensions are blank and everything else works.
+`vipsthumbnail` (part of libvips) is the only hard requirement: it renders the
+display copies. `exiftool` is optional; without it, capture dates and
+dimensions are blank.
 
 R packages: `yaml`, `base64enc`; plus `shiny`, `bslib` and `htmltools` for the
 app, and `pkgload` to run `exec/phostor` against an uninstalled source tree.
 
 **Use Chrome or Firefox.** Recording needs `MediaRecorder` with Opus in WebM.
-Both have it, and both are tested end to end. **Safari does not** — it records
-fragmented MP4, whose chunks do not concatenate into a playable file. `ph_app()` 
-opens a browser that can record in preference to your system default, and tells 
-you which one it opened.
+Both support it, and both are tested end to end. Safari does not: it records
+fragmented MP4, whose chunks do not concatenate into a playable file.
+`ph_app()` opens a browser that can record in preference to the system default,
+and reports which one it opened.
 
-### If recording fails, it is almost certainly the operating system
+### If recording fails, check the operating system first
 
-macOS grants microphone access **per application**, underneath the permission
-the web page asks for. A browser can be allowed by the page and refused by the
-system, and what reaches the page is an unhelpful `NotFoundError`.
+macOS grants microphone access per application, underneath the permission the
+web page asks for. A browser can be allowed by the page and refused by the
+system, and what reaches the page is `NotFoundError`, which does not indicate
+the cause.
 
-Press **Check microphone** in the app — before the evening, not during it. It
-names your browser, lists the input devices it can see, shows a live level meter
-that moves when you speak, and records three seconds to play straight back. If
-something is wrong, it says what to do about it.
+Press **Check microphone** in the app before starting. It names the browser,
+lists the input devices it can see, shows a level meter that moves when you
+speak, and records three seconds to play back. If something is wrong, it
+reports what to change.
 
 The usual fix:
 
 > **System Settings → Privacy & Security → Microphone** → switch your browser
 > on → **quit the browser completely and open it again.** macOS applies the
-> change only on relaunch, which is the step almost everyone misses.
+> change only on relaunch.
 
 `ph_preflight()` reports which browsers are installed, which one your system
 would open, and whether it can record.
@@ -101,24 +98,22 @@ phostor go   --work ~/phostor/family
 
 ## Running a sitting
 
-0. **Check microphone** first, while nobody is waiting. The level meter should
-   move when you speak. If there is more than one input, pick the right one —
-   a virtual device (Teams, Zoom) or a disconnected phone will record silence.
-1. **Start sitting.** The browser asks for the microphone; a banner says plainly
-   that the room is being recorded. A red **REC** badge stays on screen the
-   whole time, legible from across the room. If the microphone does not open,
-   the app says why and offers **Try the microphone again** — fix the
-   permission, press it, carry on.
+0. **Check microphone** first. The level meter should move when you speak. If
+   there is more than one input, select the right one: a virtual device (Teams,
+   Zoom) or a disconnected phone will record silence.
+1. **Start sitting.** The browser asks for the microphone, and a dialog states
+   that recording has started. A red **REC** badge stays on screen while the
+   microphone is live. If the microphone does not open, the app reports why and
+   offers **Try the microphone again**.
 2. **Show photographs.** Click the tree, or use `←` and `→`. `s` hides the
    sidebar, `f` goes full screen — presentation mode leaves nothing but the
    photograph and the recording indicator.
 3. **Talk.** Recording follows the photographs on its own.
-4. **Add what the room concludes.** Names go in as chips, with autocomplete from
+4. **Add what was established.** Names go in as chips, with autocomplete from
    every name used earlier in the project. Place, event and a date guess are
    three short fields. On a second visit they start filled in from last time.
-5. **Pause** for a tea break, then **Resume**. **Discard this take** throws away
-   the recording for the photograph on screen and starts it again — for when
-   the dog barked.
+5. **Pause** to stop recording, then **Resume**. **Discard this take** throws
+   away the recording for the photograph on screen and starts it again.
 6. **End sitting.**
 
 Later, pick the sitting from the dropdown and press **Play**.
@@ -136,7 +131,7 @@ Later, pick the sitting from the dropdown and press **Play**.
   sessions/
     2026-08-23-1930/
       session.yml       title, when it started, which photographs
-      path.tsv          the route through the evening, appended as it happens
+      path.tsv          the order photos were viewed, appended as it happens
   sidecars/
     Trips/Skye/img_0421.jpg/    mirrors the photo directory, a folder per photo
       visit-0001.yml
@@ -145,14 +140,13 @@ Later, pick the sitting from the dropdown and press **Play**.
       visit-0002.webm
 ```
 
-The sidecar tree mirrors the photo directory path for path, and each photograph
-gets a **directory named exactly like its file**. Two reasons. A photograph's
-record must be findable from its path alone, years from now and without
-phostor; and every visit to one photograph — across every sitting it ever
-appeared in — then sits together in one place.
+The sidecar tree mirrors the photo directory path for path, and each
+photograph gets a directory named after its file. This keeps a photograph's
+record findable from its path without phostor, and keeps all visits to one
+photograph in one place.
 
-Visit numbers are per photograph and never reused. Deleting visit 2 of 3 leaves
-the next visit as number 4, so no sidecar ever silently replaces another.
+Visit numbers are per photograph and are not reused. Deleting visit 2 of 3
+leaves the next visit as number 4, so no sidecar overwrites another.
 
 ### A visit
 
@@ -174,14 +168,13 @@ when: summer 1974
 transcript: ~
 ```
 
-`people`, `place`, `event` and `when` are **what the room concluded**, kept
-deliberately apart from EXIF. On a scanned print the EXIF date is the date of
-the scan, and the room is the better authority. `transcript` is reserved: an
-offline pass can fill it in later without a format change, so the key is
-written now and readers can rely on it existing.
+`people`, `place`, `event` and `when` hold what was said, kept separate from
+EXIF: on a scanned print the EXIF date is the date of the scan. `transcript` is
+reserved so a later offline pass can fill it in without a format change; the
+key is written now and readers can rely on it existing.
 
-These are plain YAML files with a comment at the top. Hand-edit them freely.
-phostor only ever adds files.
+These are plain YAML files with a comment at the top, and can be hand-edited.
+phostor only adds files.
 
 ### The path taken
 
@@ -192,10 +185,9 @@ iso_time              elapsed  event  rel_path             visit  duration
 2026-08-23T20:15:41Z  2679.3   leave  Trips/Skye/img_0421.jpg  3  94.2
 ```
 
-Tab-separated, appended line by line as the evening happens, so a crash or a
-shut laptop loses nothing but the visit in progress. There is no `audio` column
-on purpose: a visit's audio filename lives in its sidecar and nowhere else, so
-the two can never disagree.
+Tab-separated, appended a line at a time, so a crash loses only the visit in
+progress. There is no `audio` column: a visit's audio filename lives in its
+sidecar, so the two cannot disagree.
 
 ## Configuration
 
@@ -205,53 +197,50 @@ directory the config is in, so there is no `work_dir:` key to keep in step.
 
 - `title` — shown in the browser title bar and each sitting's `session.yml`.
 - `display_size` / `thumb_size` — longest edge of the pre-rendered copies.
-  Raise `display_size` for a 4K television.
+  `display_size` defaults to 4096, for a 4K display; lower it to 2048 for a
+  smaller screen, or if rendering takes too long.
 - `min_visit_seconds` — a visit shorter than this logs a row in `path.tsv` but
-  writes no sidecar, so paging past forty photographs looking for one does not
-  leave forty empty records. Set it to `0` to keep every visit.
+  writes no sidecar, so paging through photographs does not leave a record for
+  each one. Set it to `0` to keep every visit.
 - `chunk_seconds` — seconds of audio per upload. Each chunk is written to disk
-  as it arrives, so this is also how much a crash can cost you.
+  as it arrives, so this is also how much a crash can lose.
 - `extensions` / `cruft` — what counts as a photograph, and what to skip.
 
-## How the recording actually works
+## How recording works
 
-The browser records with `MediaRecorder` and ships the stream up in chunks.
-Each chunk is appended to a `visit-NNNN.webm.part` file the moment it arrives,
-and renamed to its final name only when the visit closes cleanly. So a crash
-costs one chunk rather than the evening, and a `.part` file left behind is
-unambiguously an interrupted visit — playable, and never deleted by phostor.
-`ph_status()` reports them.
+The browser records with `MediaRecorder` and sends the stream in chunks. Each
+chunk is appended to a `visit-NNNN.webm.part` file as it arrives, and renamed
+to its final name when the visit closes. A crash therefore loses one chunk, and
+a `.part` file left behind marks an interrupted visit; it is playable, and
+phostor does not delete it. `ph_status()` reports them.
 
-Chunks from a single recorder concatenate into a valid WebM, which is why this
-needs no `ffmpeg` and no muxing step, and why phostor pins the format rather
-than stitching together whatever a browser happens to offer.
+Chunks from a single recorder concatenate into a valid WebM, so no `ffmpeg` or
+muxing step is needed. phostor pins the recording format for the same reason.
 
 Chunks are acknowledged one at a time. Shiny coalesces repeated writes to one
-input within a flush, so a fire-and-forget upload would silently lose whichever
-chunk arrived second. And the server ignores any chunk whose visit it does not
-recognise — that single rule is what makes every start, stop and discard race
-safe: audio from a superseded recorder lands nowhere.
+input within a flush, so sending without waiting for an acknowledgement would
+lose whichever chunk arrived second. The server also ignores any chunk whose
+visit it does not recognise, which is what makes the start, stop and discard
+races safe: audio from a superseded recorder is dropped.
 
-## Is it safe for my photographs?
-
-That is the whole design.
+## Read-only guarantee
 
 - `ph_config()` refuses to run when the work directory is the same as, inside,
   or contains `photo_root` — case-insensitively where the filesystem is, since
   `/Volumes/Photo` and `/Volumes/photo` are one directory on APFS.
-- Everything phostor writes is built from a path under the work directory.
-- The test suite drives a complete scripted sitting through the real app server
-  and asserts that every file under the photo directory is byte-for-byte
-  unchanged afterwards.
+- Every path phostor writes to is built from the work directory.
+- The test suite drives a scripted sitting through the real app server and
+  asserts that every file under the photo directory is byte-for-byte unchanged
+  afterwards.
 
-If you want, mount the photo collection read-only, phostor will not
-notice the difference.
+The photo collection can also be mounted read-only; phostor behaves the same
+either way.
 
 ## Development
 
 ```r
 devtools::test()      # the R suite
-devtools::check()     # clean before anything ships
+devtools::check()     # must be clean before release
 ```
 
 ```sh
@@ -259,17 +248,18 @@ tests/browser/run.sh  # the browser half, against real Chrome and Firefox
 ```
 
 The R suite cannot reach the microphone, `MediaRecorder`, the chunk upload or
-the playback clock: `shiny::testServer()` fakes the browser entirely. So those
-live in `tests/browser/`, driven by Playwright against a **real** browser with a
-**synthetic microphone** — Chrome's `--use-fake-device-for-media-stream` and
-Firefox's `media.navigator.streams.fake` — so the tests never touch a real
-device, never raise a prompt, and never depend on system privacy settings.
+the playback clock, because `shiny::testServer()` substitutes for the browser.
+Those tests live in `tests/browser/`, driven by Playwright against a real
+browser with a synthetic microphone — Chrome's
+`--use-fake-device-for-media-stream` and Firefox's
+`media.navigator.streams.fake` — so they do not use a real device, raise a
+permission prompt, or depend on system privacy settings.
 
 Each browser gets its own photo collection, work directory and phostor
-instance. The specs drive the real UI and then assert on **disk**: the sidecars
-written, the `.webm` files carrying a valid EBML header and an `OpusHead`
-stream, `path.tsv` strictly alternating `show`/`leave`, and the photo directory
-byte-for-byte unchanged afterwards.
+instance. The specs drive the UI and then assert on disk: the sidecars written,
+the `.webm` files carrying a valid EBML header and an `OpusHead` stream,
+`path.tsv` alternating `show`/`leave`, and the photo directory byte-for-byte
+unchanged afterwards.
 
 Chrome is used as installed. Firefox needs Playwright's own build, once:
 
@@ -280,20 +270,19 @@ npx --prefix tests/browser playwright install firefox   # optional
 
 `.Rbuildignore` keeps all of it out of the package, so `R CMD check` never sees
 Node. Waits are on the app's own DOM state — `data-ph-mic`, `data-ph-visit`,
-`data-ph-visit-chunks` — never on a sleep.
+`data-ph-visit-chunks` — rather than on a sleep.
 
-Test fixtures are **generated**, not committed: `vips gaussnoise` builds a small
+Test fixtures are generated, not committed: `vips gaussnoise` builds a small
 nested photo directory at test time, so the repository carries no photographs
-and the fixtures cannot drift away from the tools that read them.
-`tests/fixtures/make-fixtures.sh` builds the same tree by hand if you want one
-to look at.
+and the fixtures cannot drift from the tools that read them.
+`tests/fixtures/make-fixtures.sh` builds the same tree for inspection.
 
 `inst/shiny/app.R` is the one file `R CMD check` never sources, and `runApp()`
-sources it with only `library(phostor)` attached — exports and nothing else. So
-an app calling an unexported function passes every check and fails the moment a
-photograph is shown. `tests/testthat/test-app.R` closes that gap from both
-sides: it walks the app's parse tree asserting every `ph_*` it calls is
-exported, and it drives the real server end to end.
+sources it with only `library(phostor)` attached, so only exports are visible.
+An app calling an unexported function would pass every check and fail when a
+photograph is shown. `tests/testthat/test-app.R` covers this from both sides:
+it walks the app's parse tree asserting every `ph_*` it calls is exported, and
+it drives the real server end to end.
 
 ## License
 

@@ -39,7 +39,7 @@ test_that("a PNG is rendered to a JPEG the browser can show", {
   id <- idx$id[idx$rel_path == "Trips/x.png"]
   f <- file.path(p$cfg$display_dir, paste0(id, ".jpg"))
   expect_true(file.exists(f))
-  # JPEG magic: rendering, not copying, is what makes HEIC and TIFF displayable.
+  # JPEG magic bytes: the file was rendered, not copied.
   expect_equal(readBin(f, "raw", 3), as.raw(c(0xff, 0xd8, 0xff)))
 })
 
@@ -63,10 +63,10 @@ test_that("the display copy is bounded by display_size", {
   expect_lte(max(wh), 256L)
 })
 
-test_that("an unreadable source is reported, not fatal", {
+test_that("an unreadable source is counted as failed, not fatal", {
   skip_if_not(have_vipsthumbnail(), "vipsthumbnail not installed")
   p <- make_project()
-  # A file with a photograph's name and none of its bytes.
+  # A file with a photograph's extension and no image data.
   writeLines("not an image", file.path(p$photos, "broken.jpg"))
   suppressMessages(ph_index(p$cfg, quiet = TRUE))
   out <- suppressMessages(ph_render_all(p$cfg, quiet = TRUE))
@@ -74,7 +74,7 @@ test_that("an unreadable source is reported, not fatal", {
   expect_gt(out$rendered, 0L)
 })
 
-test_that("rendering without a catalogue says so rather than failing", {
+test_that("rendering without a catalogue reports it rather than failing", {
   photos <- make_photos()
   work <- tempfile("work-")
   quiet_init(work, photo_root = photos)

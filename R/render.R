@@ -1,18 +1,15 @@
 # Pre-rendered display copies and thumbnails, one pair per photograph.
 #
-# Everything is rendered up front rather than on demand. At a few hundred
-# photographs that is a one-off of seconds, and it buys three things at once:
-# the browser is never waiting on vips mid-sitting; HEIC, TIFF and the rest are
-# normalised to something a browser will actually display; and vipsthumbnail
-# applies EXIF rotation, so a portrait photograph is not shown on its side.
+# Rendered up front rather than on demand. At a few hundred photographs that is
+# a one-off of seconds, and it means the browser never waits on vips during a
+# session, HEIC and TIFF are normalised to a format browsers display, and
+# vipsthumbnail applies EXIF rotation.
 #
-# There is deliberately no LRU cache here. dundee bounds its original cache
-# because it faces a library of tens of thousands; at this size a cache would
-# be complexity with nothing to buy.
+# No LRU cache: dundee bounds its original cache because it handles tens of
+# thousands of files; at this size a cache is not worth the complexity.
 
-# Formats a browser will render from raw bytes. Everything else has to be
-# converted before it can be displayed at all -- which is why the display copy
-# is always rendered, whatever the source.
+# Formats a browser renders from raw bytes. Anything else must be converted
+# first, so the display copy is always rendered whatever the source.
 ph_web_formats <- c("jpg", "jpeg", "jpe", "png", "gif", "webp", "bmp", "avif")
 
 #' Is this a format a browser can display directly?

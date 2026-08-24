@@ -9,13 +9,13 @@ test_that("visit numbering starts at one and never reuses a number", {
   ph_write_sidecar(p$cfg, rel, 3L, list(place = "three"))
   expect_equal(ph_next_visit(p$cfg, rel), 4L)
 
-  # Deleting a visit from the middle must not let the next one silently take
-  # its number and overwrite what is still there.
+  # Deleting a visit from the middle must not let the next one take its number
+  # and overwrite the existing file.
   unlink(file.path(ph_visit_dir(p$cfg, rel), "visit-0002.yml"))
   expect_equal(ph_next_visit(p$cfg, rel), 4L)
 
-  # Even deleting the highest: numbering follows what is still on disk, but the
-  # remaining sidecars keep their own numbers.
+  # After deleting the highest, numbering follows what is on disk; remaining
+  # sidecars keep their own numbers.
   unlink(file.path(ph_visit_dir(p$cfg, rel), "visit-0003.yml"))
   expect_equal(ph_next_visit(p$cfg, rel), 2L)
   expect_equal(ph_read_sidecar(
@@ -28,9 +28,9 @@ test_that("an interrupted visit still claims its number", {
   part <- ph_audio_open(p$cfg, rel, 1L)
   expect_true(file.exists(part))
   # No sidecar was written, but the number is taken: leaving a photograph and
-  # coming straight back must not reuse it.
+  # returning must not reuse it.
   expect_equal(ph_next_visit(p$cfg, rel), 2L)
-  # ...and it is not counted as a visit, because nothing was recorded.
+  # It is not counted as a visit, because nothing was recorded.
   expect_equal(ph_visit_counts(p$cfg, rel), 0L)
 })
 
@@ -70,7 +70,7 @@ test_that("every schema field is present, empty ones as an explicit null", {
   ph_write_sidecar(p$cfg, "top.jpg", 1L, list())
   f <- file.path(ph_visit_dir(p$cfg, "top.jpg"), "visit-0001.yml")
   txt <- readLines(f)
-  # transcript is reserved for a later offline pass: the key must exist now, so
+  # transcript is reserved for a later offline pass, so the key exists now and
   # adding it later is not a format change.
   expect_true(any(grepl("^transcript: ~", txt)))
   expect_true(any(grepl("^people: \\[\\]", txt)))
@@ -119,7 +119,7 @@ test_that("known people are gathered from every sidecar in the project", {
   expect_equal(ph_known_people(p$cfg), c("Ada", "Bo", "Cy"))
 })
 
-test_that("a corrupt sidecar is skipped, not fatal", {
+test_that("a corrupt sidecar is skipped rather than raising an error", {
   p <- make_project()
   rel <- "top.jpg"
   ph_write_sidecar(p$cfg, rel, 1L, list(place = "fine"))

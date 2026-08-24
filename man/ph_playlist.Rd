@@ -13,12 +13,12 @@ ph_playlist(cfg, session_dir)
 }
 \value{
 A data.frame with \code{rel_path}, \code{id}, \code{visit}, \code{duration} and \code{audio}
-(a path relative to \code{sidecar_dir}, or \code{NA}). Audio and duration are taken
-from each visit's sidecar, which is where they are authoritative.
+(a path relative to \code{sidecar_dir}, or \code{NA}). Audio and duration are read
+from each visit's sidecar, which is where they are recorded.
 }
 \description{
-Every completed visit, in the order the evening took them, with the audio
-each one recorded. This is what the Play button walks.
+Every completed visit, in the order it was recorded, with the audio each one
+produced. This is what the Play button walks.
 }
 \examples{
 \dontrun{

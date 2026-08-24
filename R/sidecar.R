@@ -1,24 +1,22 @@
-# Sidecars: what was said about one photograph, on one visit.
+# Sidecars: what was recorded about one photograph, on one visit.
 #
-# The sidecar tree mirrors photo_root path for path, and each photograph gets a
-# DIRECTORY named exactly like its file:
+# The sidecar tree mirrors photo_root path for path. Each photograph gets a
+# directory named after its file:
 #
 #   sidecars/Trips/Skye/img_0421.jpg/visit-0001.yml
 #   sidecars/Trips/Skye/img_0421.jpg/visit-0001.webm
 #
-# Two reasons for the mirror rather than a flat store keyed by id. A
-# photograph's record must be findable from its path alone, years later and
-# without phostor; and every visit to one photograph, across every sitting it
-# ever appeared in, then sits together in one directory. Ids are for the
-# rendered copies, which nobody browses.
+# A mirror rather than a flat store keyed by id, so that a photograph's record
+# is findable from its path without phostor, and so all visits to one
+# photograph sit in one directory. Ids key the rendered copies instead.
 #
-# Visits are numbered per photograph and never reused: numbering takes the
-# maximum it can see, so deleting visit 2 of 3 leaves the next visit as 4 and
-# no sidecar ever silently replaces another.
+# Visit numbers are per photograph and are not reused: numbering takes the
+# highest number present, so deleting visit 2 of 3 leaves the next visit as 4
+# and no sidecar overwrites another.
 
 # Fields written to every sidecar, in this order. `transcript` is reserved and
-# always written as null in this version -- an offline pass can fill it in
-# later without a format change, and readers can rely on the key existing.
+# always written as null in this version, so a later offline pass can fill it
+# in without a format change and readers can rely on the key existing.
 ph_sidecar_fields <- c("photo", "visit", "session", "started", "ended",
                        "duration", "audio", "people", "place", "event",
                        "when", "transcript")
@@ -42,9 +40,9 @@ ph_visit_dir <- function(cfg, rel_path, create = FALSE) {
 
 #' Every visit number already used in a photograph's sidecar directory.
 #'
-#' Counts every visit-numbered file, whatever its extension. Numbering must see
-#' the audio too: a `.webm`, or a `.part` from an interrupted visit, still
-#' claims its number even though no sidecar was written.
+#' Counts every visit-numbered file, whatever its extension. Numbering must
+#' include the audio: a `.webm`, or a `.part` from an interrupted visit, holds
+#' its number even though no sidecar was written.
 #'
 #' @param dir A directory from [ph_visit_dir()].
 #' @return A sorted integer vector.
@@ -98,9 +96,8 @@ ph_write_sidecar <- function(cfg, rel_path, visit, fields = list()) {
   dir <- ph_visit_dir(cfg, rel_path, create = TRUE)
   out <- file.path(dir, paste0(ph_visit_stem(visit), ".yml"))
 
-  # Every field in the schema is written, empty ones as an explicit `~`. A key
-  # that is sometimes simply absent is harder to read back -- and harder to
-  # hand-edit -- than one that is always there and sometimes null. Note the
+  # Every field in the schema is written, empty ones as an explicit `~`, so
+  # readers and hand-editors always see the same set of keys. Note the
   # single-bracket assignment: `body[[k]] <- NULL` would delete the key.
   body <- list()
   body[["photo"]] <- rel_path
@@ -125,7 +122,7 @@ ph_write_sidecar <- function(cfg, rel_path, visit, fields = list()) {
   writeLines(c(
     sprintf("# phostor %s -- visit %d of %s", ph_pkg_version(),
             as.integer(visit), rel_path),
-    "# What the room said. Hand-edit freely; phostor only ever adds files.",
+    "# Safe to hand-edit; phostor only adds files, never rewrites them.",
     yaml::as.yaml(body)
   ), out, useBytes = TRUE)
   invisible(out)
@@ -207,8 +204,8 @@ ph_known_people <- function(config = NULL) {
 
 #' The most recent visit to a photograph, or `NULL`.
 #'
-#' Used to seed the tag fields, so a second visit starts from what the room
-#' already established rather than from blank.
+#' Used to seed the tag fields, so a second visit starts from the previous
+#' visit's values rather than blank.
 #'
 #' @param cfg A config list from [ph_config()].
 #' @param rel_path Path of the photograph relative to `photo_root`.

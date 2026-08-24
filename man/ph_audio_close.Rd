@@ -14,10 +14,9 @@ The final filename (basename only, as stored in the sidecar), or
 \code{NA_character_}.
 }
 \description{
-Renames the \code{.part} file to its final name. An empty or absent \code{.part} --
-the microphone was never armed, or the visit was too short to produce a
-chunk -- yields \code{NA} and leaves no file behind, so the sidecar records no
-audio rather than pointing at silence.
+Renames the \code{.part} file to its final name. An empty or absent \code{.part}
+(the microphone was never armed, or the visit was too short to produce a
+chunk) returns \code{NA} and leaves no file, so the sidecar records no audio.
 }
 \examples{
 \dontrun{

@@ -13,12 +13,12 @@ ph_mic_advice(why, browser = NULL)
 application in the instruction.}
 }
 \value{
-A single string of plain prose.
+A single string.
 }
 \description{
 Turns the \code{name} of a \code{getUserMedia()} rejection into an instruction. The
-remedy is nearly always outside the browser, which is why the raw error name
-is so unhelpful on its own.
+remedy is usually outside the browser, so the error name alone does not
+indicate it.
 }
 \examples{
 ph_mic_advice("NotFoundError", "Firefox")

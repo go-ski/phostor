@@ -2,8 +2,8 @@
 
 #' Prepare a project and launch the app.
 #'
-#' Indexes, renders and then starts the Shiny app -- the one call that takes a
-#' fresh work directory to a running sitting.
+#' Indexes, renders and then starts the Shiny app: one call from a fresh work
+#' directory to a running session.
 #'
 #' @param config A work directory, a config path, or a config list.
 #' @param ... Passed to [ph_app()].
@@ -28,8 +28,8 @@ ph_go <- function(config = NULL, ...) {
 #' Blocks until the app stops.
 #'
 #' Recording happens in the browser, so which browser opens matters. By default
-#' phostor opens one that can record -- Chrome, then Firefox -- in preference
-#' to the system default, which may be neither.
+#' phostor opens one that can record (Chrome, then Firefox) in preference to
+#' the system default, which may be neither.
 #'
 #' @param config A work directory, a config path, or a config list.
 #' @param port Port to serve on.
@@ -130,7 +130,7 @@ ph_status <- function(config = NULL) {
                                      ")") else "")
   if (orphans) {
     message("  interrupted: ", orphans, " .part file(s) -- audio from a ",
-            "visit that did not close; playable, never deleted by phostor")
+            "visit that did not close; playable, and not deleted by phostor")
   }
   invisible(list(photos = nrow(idx), sittings = nrow(sess), visits = sidecars,
                  people = length(people), orphans = orphans))

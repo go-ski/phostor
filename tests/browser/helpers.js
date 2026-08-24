@@ -40,9 +40,9 @@ function pathRows() {
   });
 }
 
-// A WebM file begins with the EBML magic 1A 45 DF A3. There is no ffmpeg on
-// this machine, so the header is the check that the chunks the browser sent
-// really did concatenate into a playable container rather than a pile of bytes.
+// A WebM file begins with the EBML magic 1A 45 DF A3. With no ffmpeg
+// available, the header is how the tests check that the chunks the browser
+// sent concatenated into a valid container.
 function expectValidWebm(file, minBytes = 512) {
   const buf = fs.readFileSync(file);
   expect(buf.length, `${path.basename(file)} is too small`).toBeGreaterThan(minBytes);
@@ -50,26 +50,26 @@ function expectValidWebm(file, minBytes = 512) {
     Array.from(buf.subarray(0, 4)),
     `${path.basename(file)} does not start with the EBML magic`
   ).toEqual([0x1a, 0x45, 0xdf, 0xa3]);
-  // The Opus identification header sits in the track's CodecPrivate. Finding it
-  // proves the concatenated chunks carry a real Opus stream, not merely a
-  // container header followed by rubble -- and needs no ffmpeg to check.
+  // The Opus identification header sits in the track's CodecPrivate. Finding
+  // it shows the concatenated chunks carry an Opus stream, not just a
+  // container header, and needs no ffmpeg.
   expect(
     buf.includes(Buffer.from('OpusHead')),
     `${path.basename(file)} carries no Opus stream`
   ).toBe(true);
 }
 
-// Wait for the mic to reach a state, using the app's own DOM hooks rather than
-// a sleep. body[data-ph-mic] is off | arming | on | error.
+// Wait for the mic to reach a state, using the app's DOM hooks rather than a
+// sleep. body[data-ph-mic] is off | arming | on | error.
 async function micState(page, state) {
   await page.waitForSelector(`body[data-ph-mic="${state}"]`);
 }
 
 // Chunks are acknowledged one at a time by the server, and the app counts them
-// on <body>. Wait on the PER-VISIT count, never the global one: when a visit
-// closes, its recorder flushes a final chunk, which would otherwise satisfy a
+// on <body>. Wait on the per-visit count rather than the global one: when a
+// visit closes its recorder flushes a final chunk, which would satisfy a
 // global "wait for one more" and let the spec navigate away before the next
-// photograph has recorded anything at all.
+// photograph had recorded anything.
 async function waitForVisitChunks(page, atLeast = 1) {
   await page.waitForFunction(
     (n) => parseInt(document.body.dataset.phVisitChunks || '0', 10) >= n,
@@ -84,8 +84,8 @@ function sessionCount() {
   return fs.existsSync(d) ? fs.readdirSync(d).length : 0;
 }
 
-// Record a short sitting, so a spec that needs one to exist can stand alone
-// rather than depending on which file Playwright happened to run first.
+// Record a short sitting, so a spec that needs one can stand alone rather
+// than depending on which file Playwright ran first.
 async function recordShortSitting(page) {
   const ids = await photoIds(page);
   await page.click('#start');

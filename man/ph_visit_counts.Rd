@@ -15,9 +15,8 @@ ph_visit_counts(cfg, rel_paths)
 An integer vector, parallel to \code{rel_paths}.
 }
 \description{
-Counts written sidecars only. An interrupted visit's \code{.part} file still
-reserves its number (see \code{\link[=ph_next_visit]{ph_next_visit()}}) but is not a visit yet, and
-showing it as one in the tree would be a lie.
+Counts written sidecars only. An interrupted visit's \code{.part} file reserves
+its number (see \code{\link[=ph_next_visit]{ph_next_visit()}}) but is not a recorded visit.
 }
 \examples{
 \dontrun{

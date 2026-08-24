@@ -1,20 +1,19 @@
-// Drives phostor's browser half: the microphone, MediaRecorder, the chunk
-// upload and the playback clock -- none of which the R suite can reach, because
-// testServer() fakes the browser entirely.
+// Drives phostor's browser code: the microphone, MediaRecorder, the chunk
+// upload and the playback clock. The R suite cannot reach any of it, because
+// testServer() substitutes for the browser.
 //
-// Uses the Chrome already installed on the machine (channel: 'chrome') rather
-// than downloading a bundled Chromium, and replaces the microphone with
-// Chrome's synthetic device so the tests never touch a real one, never raise a
-// permission prompt, and never depend on macOS privacy settings -- which is
-// exactly what broke the first real sitting.
+// Uses the installed Chrome (channel: 'chrome') rather than a bundled
+// Chromium, and replaces the microphone with Chrome's synthetic device, so the
+// tests do not use a real device, raise a permission prompt, or depend on
+// macOS privacy settings.
 const { defineConfig } = require('@playwright/test');
 
 module.exports = defineConfig({
   testDir: __dirname,
   timeout: 60000,
   expect: { timeout: 15000 },
-  // One worker: every spec drives the same phostor instance and the same work
-  // directory, and asserts on files. They must not interleave.
+  // One worker: every spec drives the same phostor instance and work
+  // directory and asserts on files, so they must not interleave.
   workers: 1,
   fullyParallel: false,
   reporter: [['list']],
@@ -31,12 +30,11 @@ module.exports = defineConfig({
         permissions: ['microphone'],
         launchOptions: {
           args: [
-            // A synthetic microphone that is always present and emits a tone,
-            // so recordings carry real bytes rather than silence.
+            // A synthetic microphone that is always present and emits a
+            // tone, so recordings contain audio rather than silence.
             '--use-fake-device-for-media-stream',
-            // Auto-grant getUserMedia: no prompt, no OS involvement -- which
-            // is the whole point, since an OS-level denial is what broke the
-            // first real sitting.
+            // Auto-grant getUserMedia: no prompt and no OS permission
+            // check, which the tests must not depend on.
             '--use-fake-ui-for-media-stream',
             '--autoplay-policy=no-user-gesture-required'
           ]

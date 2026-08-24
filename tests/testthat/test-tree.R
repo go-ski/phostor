@@ -39,8 +39,8 @@ test_that("visit badges appear only where there are visits", {
 
 test_that("counts follow the rows through the tree's own ordering", {
   idx <- mini()
-  # counts arrive in idx order and must be reordered with it, or a badge lands
-  # on the wrong photograph.
+  # counts arrive in idx order and are reordered with it; otherwise a badge
+  # lands on the wrong photograph.
   h <- ph_tree_html(idx, counts = c(7L, 0L, 0L, 0L, 0L))
   # id 1 is Trips/Skye/b.jpg; its row must carry the 7.
   expect_match(h, "id=\"ph-p-1\"[^>]*>.*?>7</span>")

@@ -3,16 +3,14 @@
 #   sessions/2026-08-23-1930/session.yml
 #   sessions/2026-08-23-1930/path.tsv
 #
-# path.tsv is appended line by line as the evening happens, so a crash, a shut
-# laptop or a killed R process loses nothing but the visit in progress. It is
-# tab-separated rather than JSON so that reading it needs no parser and no
-# dependency, which matters for a file meant to outlast the program.
+# path.tsv is appended a line at a time, so a crash or a killed R process loses
+# only the visit in progress. Tab-separated rather than JSON so that reading it
+# needs no parser and no dependency.
 
-# There is deliberately no `audio` column. A visit's audio filename lives in
-# its sidecar and nowhere else: recording it here too would mean two places
-# that can disagree, and the path row has to be written when the photograph is
-# left, while the audio is only final once the browser has flushed its last
-# chunk. It is derivable anyway -- sidecars/<rel_path>/visit-NNNN.webm.
+# No `audio` column: a visit's audio filename lives in its sidecar, so the two
+# cannot disagree. The path row is written when the photograph is left, while
+# the audio name is only final once the browser has flushed its last chunk.
+# The name is derivable as sidecars/<rel_path>/visit-NNNN.webm.
 ph_path_cols <- c("iso_time", "elapsed", "event", "rel_path", "visit",
                   "duration")
 
@@ -42,8 +40,8 @@ ph_path_new <- function(config = NULL, title = NULL) {
   now <- Sys.time()
   stamp <- format(now, "%Y-%m-%d-%H%M")
   dir <- file.path(cfg$sessions_dir, stamp)
-  # Two sittings in one minute would otherwise share a directory and interleave
-  # their paths into one unreadable file.
+  # Two sittings in the same minute would otherwise share a directory and
+  # interleave their paths into one file.
   n <- 1L
   while (dir.exists(dir)) {
     n <- n + 1L
@@ -170,14 +168,14 @@ ph_sessions <- function(config = NULL) {
 
 #' The playlist for one sitting.
 #'
-#' Every completed visit, in the order the evening took them, with the audio
-#' each one recorded. This is what the Play button walks.
+#' Every completed visit, in the order it was recorded, with the audio each one
+#' produced. This is what the Play button walks.
 #'
 #' @param cfg A config list from [ph_config()].
 #' @param session_dir A session directory.
 #' @return A data.frame with `rel_path`, `id`, `visit`, `duration` and `audio`
-#'   (a path relative to `sidecar_dir`, or `NA`). Audio and duration are taken
-#'   from each visit's sidecar, which is where they are authoritative.
+#'   (a path relative to `sidecar_dir`, or `NA`). Audio and duration are read
+#'   from each visit's sidecar, which is where they are recorded.
 #' @examples
 #' \dontrun{
 #' ph_playlist(ph_config(), d)
@@ -188,8 +186,8 @@ ph_playlist <- function(cfg, session_dir) {
   p <- p[p$event == "leave" & p$rel_path != "-", , drop = FALSE]
   idx <- ph_read_index(cfg)
   visit <- suppressWarnings(as.integer(p$visit))
-  # The sidecar is the authority on what was actually recorded. A visit too
-  # brief to leave one still had its turn on screen, and still gets one here.
+  # The sidecar records what was captured. A visit too brief to write one was
+  # still shown, so it is still included in the playlist.
   side <- lapply(seq_along(visit), function(i) {
     f <- file.path(cfg$sidecar_dir, p$rel_path[i],
                    sprintf("visit-%04d.yml", visit[i]))

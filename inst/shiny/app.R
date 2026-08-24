@@ -1,25 +1,24 @@
-# phostor -- an app that adds stories to photos.
+# phostor -- the Shiny app.
 #
-# A room of people looks at a photograph on a large screen and talks about it.
-# This file shows the photograph, records the talk, and writes each visit down.
-# Everything it writes goes under work_dir; photo_root is never touched.
+# Displays a photograph, records the conversation about it, and writes each
+# visit to disk. Everything it writes goes under work_dir; photo_root is never
+# touched.
 #
-# The rules this file lives by, all of them learned the expensive way:
+# Constraints this file works under:
 #
-#   * Every function called here is exported from the package. runApp() sources
-#     this file with only library(phostor) attached, so an internal helper is
-#     invisible. test-app.R asserts it.
-#   * The tree is rendered ONCE. The selection highlight is moved on the client
-#     (the ph_current handler), because rebuilding a tree to light a different
-#     row is work with nothing to show for it.
-#   * One global input per collection of clickable things, never one
-#     observeEvent() per row -- those accumulate and leak.
+#   * Every function called here must be exported from the package. runApp()
+#     sources this file with only library(phostor) attached, so an internal
+#     helper is not visible. test-app.R asserts it.
+#   * The tree is rendered once per session; the selection highlight is moved
+#     on the client (the ph_current handler) rather than by re-rendering.
+#   * One global input per set of clickable elements, not one observeEvent()
+#     per row: those accumulate and leak.
 #   * Audio chunks are acknowledged one at a time. Shiny coalesces repeated
-#     setInputValue() calls on the same input within a flush, so a naive
-#     fire-and-forget upload silently loses whichever chunk arrives second.
+#     setInputValue() calls on the same input within a flush, so sending
+#     without waiting for an acknowledgement loses whichever chunk is second.
 #   * The server ignores an audio chunk whose visit key it does not recognise.
-#     That single rule makes every start/stop/discard race safe: late chunks
-#     from a superseded recorder land nowhere.
+#     This is what makes the start/stop/discard races safe: chunks from a
+#     superseded recorder are dropped.
 
 library(shiny)
 library(bslib)
@@ -29,8 +28,8 @@ if (!requireNamespace("phostor", quietly = TRUE)) {
 }
 library(phostor)
 
-# base R gained `%||%` only in 4.4, and phostor's own copy is internal: an app
-# sourced with library(phostor) cannot see it. Local, and deliberately so.
+# base R gained `%||%` in 4.4, and phostor's own copy is internal, so an app
+# sourced with library(phostor) can see neither. Defined locally.
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
 # ph_app() writes <work_dir>/config.resolved.yml (absolute paths) and points
@@ -44,8 +43,8 @@ for (d in c(cfg$display_dir, cfg$thumb_dir, cfg$sidecar_dir, cfg$sessions_dir)) 
 }
 addResourcePath("display", normalizePath(cfg$display_dir))
 addResourcePath("thumbs", normalizePath(cfg$thumb_dir))
-# Serves each visit's audio back to the browser for the prior-visits panel and
-# for playback. Local, loopback-only, and the user's own files.
+# Serves each visit's audio to the browser for the prior-visits panel and for
+# playback. Loopback only.
 addResourcePath("sidecars", normalizePath(cfg$sidecar_dir))
 
 ph_css <- "
@@ -102,7 +101,7 @@ body { background:var(--ph-bg); color:var(--ph-ink); }
 .ph-hist .v { border-top:1px solid var(--ph-line); padding:.4rem 0; }
 .ph-hist .vh { color:var(--ph-dim); font-size:.78rem; }
 
-/* Presentation mode: the photograph and the fact that it is recording. */
+/* Presentation mode: photograph and recording indicator only. */
 body.ph-present .bslib-sidebar-layout > .sidebar,
 body.ph-present .ph-tags, body.ph-present .ph-hist-wrap,
 body.ph-present .ph-hide { display:none !important; }
@@ -133,9 +132,9 @@ body.ph-present { overflow:hidden; }
 .ph-play-strip i { display:block; height:100%; background:var(--ph-on); width:0; }
 "
 
-# All of the browser-side machinery: microphone, chunk queue, keyboard, and the
-# playback clock. It runs without jQuery except for shiny:connected, which is
-# the documented hook for registering message handlers.
+# The browser-side code: microphone, chunk queue, keyboard, playback clock.
+# It uses jQuery only for shiny:connected, the documented hook for registering
+# message handlers.
 ph_js <- "
 (function(){
   var PH = {
@@ -153,7 +152,7 @@ ph_js <- "
   // ---- chunk queue -------------------------------------------------------
   // One chunk in flight at a time, each acknowledged by the server. Shiny
   // coalesces repeated writes to one input within a flush, so sending the
-  // whole queue at once would drop all but the last.
+  // queue at once would drop all but the last.
   function pump(){
     if (PH.sending || !PH.q.length) return;
     PH.sending = true;
@@ -186,9 +185,9 @@ ph_js <- "
     };
     r.readAsDataURL(blob);
   }
-  // A visit is finished only once its recorder has stopped AND every chunk it
-  // produced has been acknowledged. Announcing it earlier would let the server
-  // rename a .part file that still has bytes coming.
+  // A visit is finished only once its recorder has stopped and every chunk it
+  // produced has been acknowledged. Reporting it earlier would let the server
+  // rename a .part file that still has bytes arriving.
   function maybeDone(key){
     if (!PH.closing[key]) return;
     if ((PH.pending[key] || 0) > 0) return;
@@ -198,9 +197,8 @@ ph_js <- "
   }
 
   // ---- DOM state hooks ---------------------------------------------------
-  // Written to <body> so the browser tests can wait on real state instead of
-  // sleeping, and so anyone can see what the app thinks is happening by
-  // looking at the element inspector.
+  // Written to <body> so the browser tests can wait on state rather than
+  // sleeping, and so the app's state is visible in the element inspector.
   function setMic(state){
     document.body.dataset.phMic = state;
     var el = document.getElementById('ph-mic-state');
@@ -211,11 +209,11 @@ ph_js <- "
     document.body.dataset.phVisit = PH.visitKey;
     showVisitChunks();
   }
-  // Two counters, because they answer different questions. phChunks is every
-  // chunk this page has ever had acknowledged; phVisitChunks is how many
-  // belong to the visit currently open. Only the second can tell you whether
-  // THIS photograph has recorded anything yet -- a chunk flushed by the
-  // previous recorder as it stopped would otherwise be mistaken for one.
+  // Two counters. phChunks is every chunk this page has had acknowledged;
+  // phVisitChunks counts only those belonging to the visit currently open.
+  // Only the second indicates whether the current photograph has recorded
+  // anything: a chunk flushed by the previous recorder as it stopped would
+  // otherwise be counted.
   function bumpChunks(key){
     var n = parseInt(document.body.dataset.phChunks || '0', 10) + 1;
     document.body.dataset.phChunks = n;
@@ -270,10 +268,9 @@ ph_js <- "
     }).catch(function(){ return []; });
   }
 
-  // Arming, with exactly one automatic retry. On macOS the OS permission grant
-  // routinely lands a moment AFTER the first getUserMedia() rejection -- the
-  // prompt is still on screen when the promise settles -- so a single retry
-  // turns a dead end into a working microphone. Once, never a loop.
+  // Arming, with one automatic retry. On macOS the system permission grant
+  // often lands just after the first getUserMedia() rejection: the prompt is
+  // still on screen when the promise settles. Retried once, not in a loop.
   function arm(isRetry){
     PH.mime = pickMime();
     setMic('arming');
@@ -299,8 +296,8 @@ ph_js <- "
   }
 
   // ---- the microphone check ----------------------------------------------
-  // Entirely client-side except for the wording of the advice, which comes
-  // from ph_mic_advice() in R so that every branch of it can be tested.
+  // Client-side except for the wording of the advice, which comes from
+  // ph_mic_advice() in R so that it can be unit-tested.
   function meterStart(stream){
     meterStop();
     var AC = window.AudioContext || window.webkitAudioContext;
@@ -398,8 +395,8 @@ ph_js <- "
   function closeCheck(){
     panel(false);
     meterStop();
-    // Release the microphone -- and the browser's recording indicator -- but
-    // only if the check opened it. A sitting in progress keeps its stream.
+    // Release the microphone, and the browser's recording indicator, but only
+    // if the check opened it. A session in progress keeps its stream.
     if (PH.checkOwnsStream && !PH.sitting) {
       stopStream(PH.stream); PH.stream = null; setMic('off');
     }
@@ -416,8 +413,8 @@ ph_js <- "
       if (e.data && e.data.size > 0) queue(key, e.data, false);
     };
     PH.rec.onstop = function(){ maybeDone(key); };
-    // Chunks from ONE recorder concatenate into a valid WebM, which is what
-    // lets the server append them straight to disk with no muxing step.
+    // Chunks from a single recorder concatenate into a valid WebM, so the
+    // server can append them to disk with no muxing step.
     PH.rec.start(PH.chunkMs);
   }
   function stopRec(){
@@ -429,7 +426,7 @@ ph_js <- "
 
   // ---- playback ----------------------------------------------------------
   // The audio element's 'ended' event is the clock. Driving this from the
-  // server could not keep image and sound in step.
+  // server would not keep image and sound in step.
   function playAt(i){
     if (!PH.play || i >= PH.play.length) { playStop(true); return; }
     PH.playIdx = i;
@@ -472,8 +469,8 @@ ph_js <- "
     if (el) {
       el.classList.add('ph-p-on');
       el.scrollIntoView({block:'nearest'});
-      // Open every collapsed ancestor, so a photograph reached by keyboard or
-      // by playback is actually visible in the tree.
+      // Open collapsed ancestors, so a photograph reached by keyboard or by
+      // playback is visible in the tree.
       var p = el.parentElement;
       while (p) { if (p.tagName === 'DETAILS') p.open = true; p = p.parentElement; }
     }
@@ -518,16 +515,14 @@ ph_js <- "
       b.textContent = m.n;
     });
 
-    // What this browser can actually do, reported once on connect so the app
-    // can say that Safari cannot record before anyone presses Start sitting,
-    // rather than at the moment the room falls quiet and looks at the screen.
+    // What this browser supports, reported once on connect, so a browser
+    // that cannot record is identified before Start session is pressed.
     send('browser_env', {secure: !!window.isSecureContext,
                          hasMedia: haveMedia(), mimes: mimeList(),
                          mime: pickMime(), ua: navigator.userAgent});
 
-    // Arming the microphone is a deliberate, visible act: it happens on a
-    // click, never on load, and the browser's own permission prompt is part of
-    // the point.
+    // The microphone is armed on a click, never on page load, so the
+    // browser's permission prompt appears in response to a user action.
     Shiny.addCustomMessageHandler('ph_arm', function(m){
       PH.sitting = true;
       arm(false);
@@ -545,8 +540,8 @@ ph_js <- "
       setText('ph-mic-advice', m.advice || '');
       setText('ph-mic-detail', m.detail || '');
     });
-    // Buttons inside the check panel are plain HTML, not Shiny inputs: the
-    // panel has to work whether or not the server is busy.
+    // Buttons inside the check panel are plain HTML, not Shiny inputs, so the
+    // panel works while the server is busy.
     var wire = function(id, fn){ var b = el(id); if (b) b.onclick = fn; };
     wire('ph-mic-run', runCheck);
     wire('ph-mic-test', testRecord);
@@ -620,9 +615,9 @@ ui <- page_sidebar(
       div(class = "ph-meta ph-hide", textOutput("sitting_info", inline = TRUE)),
       div(class = "ms-auto ph-hide", uiOutput("play_controls", inline = TRUE))
     ),
-    # Static, hidden, and owned entirely by the JavaScript above. Deliberately
-    # not a Shiny modal: a microphone check has to work even when the server is
-    # busy, and it must not depend on render timing to find its own elements.
+    # Static, hidden, and driven by the JavaScript above. Not a Shiny modal:
+    # the check must work while the server is busy, and must not depend on
+    # render timing to find its own elements.
     div(
       id = "ph-mic-panel", class = "ph-mic",
       tags$h6("Microphone check"),
@@ -631,7 +626,7 @@ ui <- page_sidebar(
           tags$button(id = "ph-mic-run", class = "btn btn-sm btn-outline-light",
                       "Check")),
       div(class = "ph-level", tags$i(id = "ph-level-fill")),
-      div(class = "hint", "Say something — the bar should move."),
+      div(class = "hint", "Speak: the level bar should move."),
       div(class = "advice", id = "ph-mic-advice"),
       div(class = "detail", id = "ph-mic-detail"),
       div(class = "row2 mt-2",
@@ -687,9 +682,9 @@ server <- function(input, output, session) {
     present = FALSE
   )
 
-  # Every message to the client goes through here: finalize_visit() also runs
-  # from onSessionEnded(), by which point the websocket is gone and a bare
-  # sendCustomMessage() would raise inside a handler nobody can catch.
+  # Every message to the client goes through here. finalize_visit() also runs
+  # from onSessionEnded(), when the websocket is gone and sendCustomMessage()
+  # would raise inside a handler that cannot catch it.
   tell <- function(type, msg) {
     tryCatch(session$sendCustomMessage(type, msg), error = function(e) NULL)
   }
@@ -701,18 +696,18 @@ server <- function(input, output, session) {
   }
 
   # ---- the tree: rendered once ------------------------------------------
-  # Deliberately does NOT read rv$current -- the highlight is moved on the
-  # client. rv$tick is here so a new visit can repaint the badges, and even
-  # that is normally done client-side by ph_badge.
+  # Does not read rv$current: the highlight is moved on the client. rv$tick is
+  # here so a new visit can repaint the badges, though that is normally done
+  # client-side by ph_badge.
   output$tree <- renderUI({
     counts <- ph_visit_counts(cfg, rv$idx$rel_path)
     HTML(ph_tree_html(rv$idx, counts = counts))
   })
 
   # onFlushed() runs outside a reactive context, where reading rv$... raises
-  # "Can't access reactive value outside of reactive consumer". isolate() is
-  # the fix, not moving the work: this has to happen after the tree exists, or
-  # the initial highlight has no element to land on.
+  # "Can't access reactive value outside of reactive consumer", so isolate().
+  # The work has to happen here: before the tree exists there is no element
+  # for the initial highlight to land on.
   session$onFlushed(function() {
     isolate({
       tell("ph_init", list(order = as.list(ph_tree_order(rv$idx)),
@@ -749,9 +744,9 @@ server <- function(input, output, session) {
     invisible(NULL)
   }
 
-  # A second visit starts from what the room already established, not from
-  # blank. Nothing is overwritten: this seeds the form, and the new visit gets
-  # its own sidecar.
+  # A second visit starts from the previous visit's values rather than blank.
+  # Nothing is overwritten: this seeds the form, and the new visit writes its
+  # own sidecar.
   seed_fields <- function(rel_path) {
     last <- ph_last_visit(cfg, rel_path)
     known <- ph_known_people(cfg)
@@ -780,18 +775,17 @@ server <- function(input, output, session) {
     rv$mic_msg <- "asking for the microphone..."
     tell("ph_arm", list(on = TRUE))
     showModal(modalDialog(
-      title = "This room is being recorded",
-      p("phostor is now recording the conversation about each photograph, ",
-        "and will keep recording until you stop the sitting."),
+      title = "Recording started",
+      p("The microphone is on. Conversation about each photograph is being ",
+        "recorded, and will continue until you end the sitting."),
       p(class = "text-secondary",
-        "Everything is written to this laptop, under the work directory. ",
-        "Nothing is uploaded anywhere."),
-      footer = modalButton("Everyone knows — begin"), easyClose = FALSE))
+        "Files are written to this computer, under the work directory. ",
+        "Nothing is uploaded."),
+      footer = modalButton("Begin"), easyClose = FALSE))
   })
 
-  # What the browser can do, reported once on connect. Knowing this before a
-  # sitting starts is the whole point: a browser that cannot record should say
-  # so while there is still time to open a different one.
+  # What the browser supports, reported once on connect, so a browser that
+  # cannot record is identified before a session starts.
   observeEvent(input$browser_env, {
     rv$env <- input$browser_env
     rv$browser <- ph_browser_name(input$browser_env$ua %||% "")
@@ -815,8 +809,8 @@ server <- function(input, output, session) {
     tell("ph_arm", list(on = TRUE))
   })
 
-  # The check panel is client-side; only the wording comes from here, so that
-  # every branch of it is reachable by the test suite.
+  # The check panel is client-side; only the wording comes from here, where the
+  # test suite can reach it.
   observeEvent(input$mic_check, {
     m <- input$mic_check
     rv$browser <- ph_browser_name(m$ua %||% "")
@@ -825,8 +819,8 @@ server <- function(input, output, session) {
       sprintf("Microphone open in %s. %s",
               rv$browser %||% "this browser",
               if (length(devs) > 1)
-                "Speak, and check the bar moves. Pick a different input above if it does not."
-              else "Speak, and check the bar moves.")
+                "Speak and check the level bar moves. Select a different input above if it does not."
+              else "Speak and check the level bar moves.")
     } else {
       ph_mic_advice(as.character(m$why %||% ""), rv$browser)
     }
@@ -846,10 +840,10 @@ server <- function(input, output, session) {
     rv$mic_msg <- if (ok) NULL else {
       ph_mic_advice(as.character(input$mic_ready$why %||% ""), rv$browser)
     }
-    # The sitting may already have opened a visit while the permission prompt
-    # was on screen. That one was opened with no recorder attached, so close it
-    # and open it again now that there is a microphone -- otherwise the first
-    # photograph of the evening is the one photograph with no audio.
+    # The session may already have opened a visit while the permission prompt
+    # was on screen. That visit has no recorder attached, so close and reopen
+    # it now that a microphone is available; otherwise the first photograph
+    # records nothing.
     if (isTRUE(rv$armed) && !is.null(rv$visit) && is.null(rv$visit$part)) {
       close_visit()
     }
@@ -863,8 +857,8 @@ server <- function(input, output, session) {
   })
 
   # An audio visit finalizes only once the browser has flushed its last chunk,
-  # so the sitting cannot be wound up the moment the button is pressed: its
-  # final `leave` row would land after `end`. Wait for the queue to drain.
+  # so the session cannot be closed the moment the button is pressed: its final
+  # `leave` row would land after `end`. Wait for the queue to drain.
   finish_sitting <- function() {
     if (!isTRUE(rv$ending) || length(rv$pending)) return(invisible(NULL))
     d <- rv$session_dir
@@ -887,9 +881,9 @@ server <- function(input, output, session) {
   }
 
   observeEvent(input$pause, {
-    # Pausing closes the visit rather than splicing a gap into its audio:
-    # chunks from two different recorders cannot be concatenated, and a visit
-    # that stops and restarts is exactly what a second visit already means.
+    # Pausing closes the visit rather than leaving a gap in its audio: chunks
+    # from two different recorders cannot be concatenated, and a stop and
+    # restart is what a second visit already represents.
     close_visit()
     tell("ph_disarm", list(on = FALSE))
     rv$armed <- FALSE
@@ -912,11 +906,11 @@ server <- function(input, output, session) {
     if (is.null(r)) return(invisible(NULL))
     rv$seq <- rv$seq + 1L
     key <- sprintf("v%d", rv$seq)
-    # Two numbering guards, because neither alone is enough. On disk,
-    # ph_next_visit() sees the .part and .yml files of every earlier visit,
-    # including from previous sittings. In memory, `reserved` covers the visit
-    # whose sidecar has not been written yet -- leaving a photograph and coming
-    # straight back would otherwise compute the same number twice.
+    # Two numbering guards; neither is sufficient alone. On disk,
+    # ph_next_visit() sees the .part and .yml files of earlier visits,
+    # including from previous sessions. In memory, `reserved` covers a visit
+    # whose sidecar is not yet written: leaving a photograph and returning
+    # would otherwise compute the same number twice.
     held <- as.integer(rv$reserved[[r$rel_path]] %||% 0L)
     n <- max(ph_next_visit(cfg, r$rel_path), held + 1L)
     rv$reserved[[r$rel_path]] <- n
@@ -939,11 +933,11 @@ server <- function(input, output, session) {
                      place = input$place %||% "",
                      event = input$event %||% "",
                      when = input$when %||% "")
-    # The `leave` row is written NOW, while this photograph is still the one
-    # being left, so path.tsv reads in the order the evening actually took. If
-    # it waited for finalize_visit() -- which an audio visit reaches only once
-    # the browser has flushed its last chunk -- the next photograph's `show`
-    # would already be above it.
+    # The `leave` row is written here, while this photograph is the one being
+    # left, so path.tsv reads in view order. Written at finalize_visit() time
+    # instead -- which an audio visit reaches only after the browser flushes
+    # its last chunk -- the next photograph's `show` would already precede
+    # it.
     v$duration <- as.numeric(difftime(v$ended, v$started, units = "secs"))
     if (!is.null(v$session_dir)) {
       ph_path_append(v$session_dir, "leave", rel_path = v$rel_path,
@@ -976,9 +970,9 @@ server <- function(input, output, session) {
     said <- length(f$people) > 0 || any(nzchar(c(f$place %||% "",
                                                  f$event %||% "",
                                                  f$when %||% "")))
-    # A visit too short to have held a conversation, with nothing typed and no
-    # audio, leaves a row in the path and nothing else. Paging past forty
-    # photographs looking for one must not leave forty empty records.
+    # A visit shorter than min_visit_seconds, with nothing typed and no audio,
+    # leaves a path row and nothing else, so paging through photographs does
+    # not write a record for each one.
     keep <- !is.na(audio) || said || dur >= cfg$min_visit_seconds
     if (keep) {
       ph_write_sidecar(cfg, v$rel_path, v$visit, list(
@@ -1026,9 +1020,8 @@ server <- function(input, output, session) {
     key <- as.character(ch$key %||% "")
     v <- rv$pending[[key]]
     # An unknown key is a chunk from a superseded recorder: a discarded visit,
-    # or one whose file has already been renamed. Dropping it is the whole
-    # reason the races above are safe. Acknowledge anyway, or the client's
-    # queue stalls behind it.
+    # or one whose file has already been renamed. Dropping it is what makes the
+    # races above safe. Acknowledge it anyway, or the client's queue stalls.
     if (!is.null(v) && !is.null(v$part)) ph_audio_append(v$part, ch$b64)
     tell("ph_chunk_ok", list(seq = ch$seq))
   })
@@ -1045,10 +1038,9 @@ server <- function(input, output, session) {
       return(actionButton("start", "Start sitting", class = "btn-sm btn-danger"))
     }
     tagList(
-      # Three states, not two. A paused sitting resumes; a sitting whose
-      # microphone never opened needs to try again -- and that used to be the
-      # same undocumented "Resume" button, which is why the failure looked
-      # like a dead end.
+      # Three states, not two: a paused session resumes, while a session whose
+      # microphone never opened needs to retry. Presenting both as "Resume"
+      # gave no indication that a failed microphone could be retried.
       if (isTRUE(rv$armed)) {
         actionButton("pause", "Pause", class = "btn-sm btn-outline-light")
       } else if (isTRUE(rv$paused)) {
@@ -1139,7 +1131,8 @@ server <- function(input, output, session) {
     close_visit()
     pl <- ph_playlist(cfg, d)
     if (!nrow(pl)) {
-      showNotification("That sitting has no completed visits.", type = "warning")
+      showNotification("That sitting has no completed visits.",
+                       type = "warning")
       return()
     }
     items <- lapply(seq_len(nrow(pl)), function(i) {
@@ -1166,13 +1159,13 @@ server <- function(input, output, session) {
   observeEvent(input$play_back,
                tell("ph_play_step", list(by = -1)))
 
-  # A closed browser tab must not lose the visit in progress: finalize it, so
+  # A closed browser tab must not lose the visit in progress: finalize it so
   # its audio is renamed and its sidecar written.
   session$onSessionEnded(function() {
     isolate({
       # Not close_visit(): that asks the browser to flush its recorder, and
-      # there is no browser left to ask. Take what already reached disk, write
-      # the sidecar, and let the .part rename stand for the rest.
+      # there is no browser left to ask. Use what already reached disk and
+      # write the sidecar from that.
       v <- rv$visit
       if (!is.null(v)) {
         v$ended <- Sys.time()

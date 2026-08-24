@@ -6,7 +6,7 @@
 \alias{phostor-package}
 \title{phostor: An App That Adds Stories to Photos!}
 \description{
-Records what a room full of people says about old photographs. A Shiny app shows the folder tree of a read-only photo directory, displays any photo on a click, and captures the conversation about it as audio. Every visit to a photo writes its own sidecar beside that photo's record -- audio, the names the room supplied, and the place, event and date they settled on -- so revisiting a photo adds to its history rather than overwriting it. The route through the evening is logged as it happens, and a Play button replays the whole sitting: the same photos, in the same order, with the same voices. The photo directory is never written to.
+Records spoken commentary about a collection of photos. A Shiny app shows the folder tree of a read-only photo directory, displays any photo on a click, and records the conversation about it as audio. Each visit to a photo writes its own sidecar file holding the audio, the names given, and a place, event and date, so a later visit adds to a photo's history rather than replacing it. The order photos were viewed in is logged as it happens, and a Play button replays a session: the same photos, in the same order, with the same audio. The photo directory is never written to.
 }
 \seealso{
 Useful links:

@@ -32,8 +32,8 @@ The config is resolved to absolute paths before launching, because
 Blocks until the app stops.
 
 Recording happens in the browser, so which browser opens matters. By default
-phostor opens one that can record -- Chrome, then Firefox -- in preference
-to the system default, which may be neither.
+phostor opens one that can record (Chrome, then Firefox) in preference to
+the system default, which may be neither.
 }
 \examples{
 \dontrun{

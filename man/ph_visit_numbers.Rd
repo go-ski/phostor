@@ -13,9 +13,9 @@ ph_visit_numbers(dir)
 A sorted integer vector.
 }
 \description{
-Counts every visit-numbered file, whatever its extension. Numbering must see
-the audio too: a \code{.webm}, or a \code{.part} from an interrupted visit, still
-claims its number even though no sidecar was written.
+Counts every visit-numbered file, whatever its extension. Numbering must
+include the audio: a \code{.webm}, or a \code{.part} from an interrupted visit, holds
+its number even though no sidecar was written.
 }
 \examples{
 ph_visit_numbers(tempdir())

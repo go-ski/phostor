@@ -1,9 +1,9 @@
 # inst/shiny/app.R is the one file R CMD check never sources, and runApp()
-# sources it with only library(phostor) attached -- exports and nothing else --
-# while the suite itself runs inside the package namespace, where every internal
-# resolves. So an app calling an unexported function passes every check and
-# fails the moment a photograph is shown. These tests close that gap from both
-# sides: statically, and by driving the real server.
+# sources it with only library(phostor) attached, so only exports are visible.
+# The suite itself runs inside the package namespace, where internals resolve.
+# An app calling an unexported function would therefore pass every check and
+# fail when a photograph is shown. These tests cover both sides: statically,
+# and by driving the real server.
 
 # first_path()/app_file()/namespace_file() live in helper-project.R, because
 # test-preflight.R needs the same both-worlds path resolution.
@@ -93,16 +93,15 @@ test_that("the tree is not rebuilt to move the highlight", {
   app <- app_file(); skip_if(is.null(app))
   body <- output_body(app, "tree")
   expect_false(is.null(body))
-  # Reading rv$current here would re-render the whole tree on every click. The
+  # Reading rv$current here would re-render the tree on every click. The
   # highlight is moved on the client instead (the ph_current handler).
   expect_false(reads_reactive(body, "current"))
 })
 
 test_that("no observer is created inside a loop", {
   app <- app_file(); skip_if(is.null(app))
-  # One observeEvent per photograph is the classic Shiny leak: they accumulate
-  # on every render and never go away. Every click in this app goes through one
-  # global input instead.
+  # One observeEvent per photograph is a known Shiny leak: they accumulate on
+  # every render. Every click in this app goes through one global input.
   bad <- FALSE
   walk <- function(e, in_loop = FALSE) {
     if (!is.call(e)) return(invisible(NULL))
@@ -125,7 +124,7 @@ test_that("the app never writes outside the work directory", {
   app <- app_file(); skip_if(is.null(app))
   src <- readLines(app)
   # Every path the app builds is rooted at a cfg$*_dir. A literal photo_root
-  # join in a writing call would be the one way to break the invariant.
+  # join in a writing call would break that.
   expect_false(any(grepl("file.path\\(cfg\\$photo_root", src)))
 })
 
@@ -151,12 +150,11 @@ app_dir_for <- function(p) {
   dirname(app_file())
 }
 
-test_that("a scripted sitting records visits, revisits and the path taken", {
+test_that("a scripted sitting records visits, revisits and the path", {
   p <- app_project()
   idx <- ph_read_index(p$cfg)
-  # The app opens on the first photograph in tree order, and starting a sitting
-  # opens a visit for whatever is already on screen -- people are looking at it
-  # and talking about it. Drive from there rather than against it.
+  # The app opens on the first photograph in tree order, and starting a
+  # sitting opens a visit for whatever is on screen. Drive from there.
   ord <- ph_tree_order(idx)
   rel_of <- function(id) idx$rel_path[match(id, idx$id)]
   a <- ord[1]; b <- ord[2]
@@ -165,8 +163,8 @@ test_that("a scripted sitting records visits, revisits and the path taken", {
 
   shiny::testServer(app_dir_for(p), {
     session$setInputs(start = 1)
-    # The room declines the microphone: the path is still recorded, and every
-    # visit still gets a sidecar. This is the synchronous half of the protocol.
+    # The microphone is declined: the path is still recorded and every visit
+    # still gets a sidecar. This is the synchronous half of the protocol.
     session$setInputs(mic_ready = list(ok = FALSE, why = "test"))
 
     session$setInputs(people = c("Nana Vera", "Uncle Stefan"),
@@ -183,7 +181,7 @@ test_that("a scripted sitting records visits, revisits and the path taken", {
   # 1. The photographs were not touched.
   expect_equal(fs_snapshot(p$photos), before)
 
-  # 2. Three visits, and the revisit is numbered 2 rather than overwriting 1.
+  # 2. Three visits, with the revisit numbered 2 rather than overwriting 1.
   expect_equal(ph_visit_counts(p$cfg, rel_of(a)), 2L)
   expect_equal(ph_visit_counts(p$cfg, rel_of(b)), 1L)
   v1 <- ph_visits_for(p$cfg, rel_of(a))
@@ -191,7 +189,7 @@ test_that("a scripted sitting records visits, revisits and the path taken", {
   expect_equal(v1[[1]]$people, c("Nana Vera", "Uncle Stefan"))
   expect_equal(v1[[1]]$place, "Elgol")
   expect_equal(v1[[1]]$when, "summer 1974")
-  # The revisit is a separate record, and the first is left exactly as it was.
+  # The revisit is a separate record; the first is unchanged.
   expect_equal(v1[[2]]$place, "Elgol, again")
 
   # 3. The path records the route, and ends after the last visit is written.
@@ -224,7 +222,7 @@ test_that("a visit's audio is assembled from the chunks the browser sends", {
   shiny::testServer(app_dir_for(p), {
     session$setInputs(start = 1)
     # Arming the microphone opens the first visit of the sitting: key "v1",
-    # because open_visit() is the only thing that advances the counter.
+    # because open_visit() is what advances the counter.
     session$setInputs(mic_ready = list(ok = TRUE, mime = "audio/webm"))
 
     for (i in seq_along(payload)) {
@@ -232,9 +230,9 @@ test_that("a visit's audio is assembled from the chunks the browser sends", {
         key = "v1", seq = i, b64 = base64enc::base64encode(payload[[i]]),
         last = FALSE))
     }
-    # A chunk from a recorder the server has already forgotten must be dropped,
-    # not appended to somebody else's take. This is the rule that makes every
-    # start/stop/discard race safe.
+    # A chunk from a recorder the server no longer knows must be dropped, not
+    # appended to another visit's take. This is what makes the start, stop and
+    # discard races safe.
     session$setInputs(audio_chunk = list(
       key = "v999", seq = 99, b64 = base64enc::base64encode(as.raw(1:64)),
       last = TRUE))
@@ -315,7 +313,7 @@ test_that("a closed browser still writes the visit in progress", {
   expect_equal(ph_visits_for(p$cfg, rel)[[1]]$place, "half-said")
 })
 
-test_that("the path reads in the order the evening took", {
+test_that("the path reads in the order photographs were viewed", {
   p <- app_project()
   idx <- ph_read_index(p$cfg)
   ord <- ph_tree_order(idx)
@@ -331,8 +329,8 @@ test_that("the path reads in the order the evening took", {
     session$setInputs(audio_chunk = list(key = "v2", seq = 2, b64 = chunk(),
                                          last = FALSE))
     session$setInputs(photo_pick = ord[3])
-    # The browser only now gets round to flushing the first two recorders --
-    # long after both photographs were left.
+    # The browser flushes the first two recorders here, after both
+    # photographs were left.
     session$setInputs(visit_done = list(key = "v1", at = 1))
     session$setInputs(visit_done = list(key = "v2", at = 2))
     session$setInputs(stop_sitting = 1)
@@ -342,8 +340,8 @@ test_that("the path reads in the order the evening took", {
   path <- ph_path_read(ph_sessions(p$cfg)$dir[1])
   ev <- path$event
   # An audio visit finalizes asynchronously, so a `leave` written at finalize
-  # time would land after the NEXT photograph's `show`. It is written when the
-  # photograph is left instead: show/leave must strictly alternate.
+  # time would land after the next photograph's `show`. It is written when the
+  # photograph is left, so show and leave alternate.
   expect_equal(ev, c("start", rep(c("show", "leave"), 3), "end"))
   expect_equal(path$rel_path[ev == "show"], path$rel_path[ev == "leave"])
   expect_equal(ev[length(ev)], "end")
@@ -354,8 +352,8 @@ test_that("the path reads in the order the evening took", {
 test_that("the app exposes DOM state hooks for the browser tests", {
   app <- app_file(); skip_if(is.null(app))
   src <- paste(readLines(app), collapse = "\n")
-  # Playwright must wait on real state, never on a sleep. These three hooks are
-  # the contract the specs in tests/browser/ are written against.
+  # Playwright waits on state rather than sleeping. These three hooks are the
+  # contract the specs in tests/browser/ are written against.
   for (hook in c("phMic", "phVisit", "phChunks")) {
     expect_match(src, hook, fixed = TRUE)
   }
@@ -369,15 +367,15 @@ test_that("the app exposes DOM state hooks for the browser tests", {
 test_that("arming retries once before giving up", {
   app <- app_file(); skip_if(is.null(app))
   src <- paste(readLines(app), collapse = "\n")
-  # On macOS the OS grant lands just after the first rejection, so one retry
-  # is the difference between a working microphone and a dead end. One, and
-  # only for the two errors that behave that way.
+  # On macOS the system grant often lands just after the first rejection, so
+  # one retry recovers it. Once only, and only for the two errors that behave
+  # that way.
   expect_match(src, "NotFoundError", fixed = TRUE)
   expect_match(src, "arm(true)", fixed = TRUE)
   expect_match(src, "function arm(isRetry)", fixed = TRUE)
 })
 
-test_that("a failed microphone is explained, not just named", {
+test_that("a failed microphone reports a remedy, not just the error name", {
   p <- app_project()
   idx <- ph_read_index(p$cfg)
   shiny::testServer(app_dir_for(p), {
@@ -386,25 +384,24 @@ test_that("a failed microphone is explained, not just named", {
       mime = "audio/webm;codecs=opus",
       ua = "Mozilla/5.0 (Macintosh; rv:141.0) Gecko/20100101 Firefox/141.0"))
     session$setInputs(start = 1)
-    # Exactly the failure that was reported: permission granted in the page,
-    # refused by macOS underneath.
+    # Permission granted in the page, refused by macOS underneath.
     session$setInputs(mic_ready = list(ok = FALSE, why = "NotFoundError"))
 
     msg <- output$sitting_info
     expect_match(msg, "Firefox")
     expect_match(msg, "Microphone")
     expect_false(grepl("^no microphone", msg))
-    # The sitting continues regardless: the path is still worth recording.
+    # The sitting continues: the path is still recorded.
     expect_true(nrow(ph_sessions(p$cfg)) == 1L)
 
-    # And there is an obvious way back once the permission is fixed.
+    # There is a way to retry once the permission is fixed.
     session$setInputs(mic_retry = 1)
     session$setInputs(mic_ready = list(ok = TRUE, mime = "audio/webm"))
     expect_match(output$sitting_info, "sitting")
   })
 })
 
-test_that("a browser that cannot record says so before a sitting starts", {
+test_that("a browser that cannot record is reported before a sitting starts", {
   p <- app_project()
   shiny::testServer(app_dir_for(p), {
     session$setInputs(browser_env = list(
@@ -423,7 +420,7 @@ test_that("a capable browser raises no banner", {
       secure = TRUE, hasMedia = TRUE, mimes = list("audio/webm;codecs=opus"),
       mime = "audio/webm;codecs=opus",
       ua = "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36"))
-    # renderUI() returning NULL yields no html at all, which is the point.
+    # renderUI() returning NULL yields no html.
     expect_false(any(grepl("cannot record",
                            as.character(output$browser_banner$html))))
   })
@@ -432,10 +429,9 @@ test_that("a capable browser raises no banner", {
 test_that("the check establishes which browser later advice names", {
   p <- app_project()
   shiny::testServer(app_dir_for(p), {
-    # Running the check is often the first thing that happens, and it is where
-    # the browser identifies itself. MockShinySession does not record custom
-    # messages, so assert the consequence: the advice that comes later names
-    # the browser the check learned about.
+    # The check is where the browser identifies itself. MockShinySession does
+    # not record custom messages, so assert the consequence: later advice names
+    # the browser the check recorded.
     session$setInputs(mic_check = list(
       ok = FALSE, why = "NotFoundError", secure = TRUE, devices = list(),
       mimes = list("audio/webm;codecs=opus"),
@@ -450,7 +446,6 @@ test_that("pause and a failed microphone are different states", {
   app <- app_file(); skip_if(is.null(app))
   src <- paste(readLines(app), collapse = "\n")
   # Pausing offers Resume; a microphone that never opened offers a retry.
-  # These used to be the same undocumented button.
   expect_match(src, "Try the microphone again", fixed = TRUE)
   expect_match(src, "rv$paused", fixed = TRUE)
 })

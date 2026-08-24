@@ -41,9 +41,9 @@ test_that("ids are stable when photographs are added", {
 
   expect_equal(nrow(second), 5L)
   keep <- match(first$rel_path, second$rel_path)
-  # Every previously-known photograph keeps its id, even though the new file
-  # sorts before all of them -- position must never determine identity, or
-  # every rendered copy would be renumbered.
+  # Every known photograph keeps its id even though the new file sorts before
+  # them: position must not determine identity, or every rendered copy would
+  # be renumbered.
   expect_equal(second$id[keep], first$id)
   expect_equal(second$id[second$rel_path == "aaa-new.jpg"], 5L)
 })
@@ -58,7 +58,7 @@ test_that("a removed photograph leaves the catalogue but keeps its sidecars", {
   expect_length(ph_visits_for(p$cfg, "top.jpg"), 1L)
 })
 
-test_that("a tab or newline in a filename is refused, not written out", {
+test_that("a tab or newline in a filename is refused at index time", {
   skip_on_os("windows")
   p <- make_project(index = FALSE)
   bad <- file.path(p$photos, "with\ttab.jpg")
@@ -79,8 +79,8 @@ test_that("capture date falls back to CreateDate and says so", {
 test_that("exiftool metadata reaches the catalogue", {
   skip_if_not(nzchar(Sys.which("exiftool")), "exiftool not installed")
   p <- make_project(index = FALSE)
-  # shQuote the whole assignment: system2() joins its args with spaces and
-  # quotes nothing, so an unquoted value with a space becomes two arguments.
+  # shQuote the assignment: system2() joins its args with spaces and quotes
+  # nothing, so an unquoted value containing a space becomes two arguments.
   system2("exiftool", c("-overwrite_original", "-q", "-m",
                         shQuote("-DateTimeOriginal=1974:07:03 14:22:01"),
                         shQuote(file.path(p$photos, "Trips/Skye/a b.jpg"))),
@@ -102,9 +102,8 @@ test_that("EXIF carrying Latin-1 bytes does not corrupt the catalogue", {
   p <- make_project(index = FALSE)
   # "Francois" with a Latin-1 cedilla: a byte sequence that is not valid UTF-8,
   # which is what an older camera or editor writes into a field declared UTF-8.
-  # It goes to exiftool through an argfile written with useBytes, because
-  # shQuote() cannot represent these bytes as an R string on this locale --
-  # which is itself the hazard being tested for.
+  # It reaches exiftool through an argfile written with useBytes, because
+  # shQuote() cannot represent these bytes as an R string in this locale.
   argfile <- tempfile("exifargs-")
   con <- file(argfile, open = "wb")
   writeBin(charToRaw("-overwrite_original\n-q\n-m\n-charset\nexif=UTF8\n-Artist=Fran"),

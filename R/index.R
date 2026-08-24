@@ -1,10 +1,9 @@
-# The catalogue. One TSV row per photograph, rebuilt on demand and cheap enough
-# at this size to rebuild often.
+# The catalogue. One TSV row per photograph, rebuilt on demand.
 #
-# dundee enumerates through a bash `find` pipeline because its library is an SMB
-# mount where R round-trips dominate. phostor's collection is local and small --
-# a sitting's worth, a few hundred files -- so list.files() is the whole scanner
-# and there is no shell layer to maintain.
+# dundee enumerates through a bash `find` pipeline because its library is an
+# SMB mount where R round-trips dominate. A phostor collection is local and a
+# few hundred files, so list.files() is the whole scanner and there is no shell
+# layer.
 
 # Columns of index.tsv, in order. Anything reading the file should go through
 # ph_read_index() rather than assuming these.
@@ -17,9 +16,9 @@ ph_ext <- function(path) {
   ifelse(e == basename(path), "", tolower(e))
 }
 
-# A tab or a newline in a path would silently corrupt index.tsv and path.tsv,
-# both of which are tab-separated. Refuse at the point of discovery, naming the
-# file, rather than writing a file that reads back wrong.
+# A tab or newline in a path corrupts index.tsv and path.tsv, both of which are
+# tab-separated. Refuse at discovery, naming the file, rather than writing one
+# that reads back wrong.
 ph_check_paths <- function(rel) {
   bad <- grepl("[\t\r\n]", rel)
   if (any(bad)) {
@@ -28,9 +27,8 @@ ph_check_paths <- function(rel) {
          "\n  Rename them, or exclude their directory via `cruft`.",
          call. = FALSE)
   }
-  # Invalid UTF-8 reaches R from filesystems that were written under another
-  # locale. Left alone it poisons index.tsv, and the failure surfaces much
-  # later as an unreadable catalogue.
+  # Invalid UTF-8 reaches R from filesystems written under another locale. If
+  # it is written to index.tsv the catalogue becomes unreadable later.
   ok <- validUTF8(rel)
   if (!all(ok)) {
     stop("phostor: these paths are not valid UTF-8 and cannot be indexed:\n  ",
@@ -92,9 +90,9 @@ ph_empty_scan <- function() {
 }
 
 # One exiftool call for the whole collection, not one per file. Perl startup is
-# roughly 90 ms, so 200 photographs is the difference between 18 seconds and
-# well under one. Filenames go through an argfile so spaces, quotes and
-# non-ASCII need no shell quoting at all.
+# roughly 90 ms, so 200 photographs is 18 seconds against well under one.
+# Filenames go through an argfile, so spaces, quotes and non-ASCII need no
+# shell quoting.
 #
 # Returns a data.frame of capture/capture_src/width/height, one row per input,
 # in input order.
@@ -116,8 +114,8 @@ ph_exif_batch <- function(paths, quiet = FALSE) {
 
   argfile <- tempfile("phostor-exif-", fileext = ".txt")
   on.exit(unlink(argfile), add = TRUE)
-  # useBytes: the paths are already validated UTF-8, and re-encoding them here
-  # under a C locale would mangle the very names we are asking exiftool about.
+  # useBytes: the paths are validated UTF-8 already, and re-encoding them under
+  # a C locale would mangle the names being passed to exiftool.
   writeLines(paths, argfile, useBytes = TRUE)
 
   out <- tryCatch(
@@ -128,8 +126,8 @@ ph_exif_batch <- function(paths, quiet = FALSE) {
             stdout = TRUE, stderr = FALSE),
     error = function(e) character(0))
   # -T prints one tab-separated line per file, in input order, with "-" for any
-  # tag it could not read. A short read means something went wrong for every
-  # file, not for some of them, so fall back wholesale rather than misalign.
+  # tag it could not read. A short read means the call failed for every file
+  # rather than some, so fall back wholesale rather than misalign the rows.
   if (length(out) != n) {
     if (!quiet && length(out)) {
       message("   -> exiftool returned ", length(out), " lines for ", n,
@@ -157,9 +155,8 @@ ph_exif_batch <- function(paths, quiet = FALSE) {
 #' Capture date, with the fallback named.
 #'
 #' `DateTimeOriginal` is the date the photograph was taken. `CreateDate` is
-#' often the date a scan or an export was made, so when it is all there is the
-#' app says which one it is showing rather than presenting a scanning date as
-#' if it were 1974.
+#' often the date of a scan or export, so when it is the only value available
+#' the app labels which field it is showing.
 #'
 #' @param capture `DateTimeOriginal` values, or `NA`.
 #' @param create_date `CreateDate` values, or `NA`.
@@ -216,8 +213,7 @@ ph_write_index <- function(cfg, idx) {
   chr <- vapply(out, is.character, logical(1))
   out[chr] <- lapply(out[chr], function(v) ifelse(is.na(v), "", v))
   # Tab-joined by hand rather than through write.table(), which transliterates
-  # non-ASCII under a C locale and would rewrite the very filenames the
-  # catalogue exists to record.
+  # non-ASCII under a C locale and would rewrite the recorded filenames.
   lines <- c(paste(ph_index_cols, collapse = "\t"),
              do.call(paste, c(unname(out), list(sep = "\t"))))
   writeLines(lines, cfg$index_file, useBytes = TRUE)
@@ -230,13 +226,12 @@ ph_write_index <- function(cfg, idx) {
 #' before, reads capture dates and dimensions in a single `exiftool` call, and
 #' writes `index.tsv`.
 #'
-#' Ids are **stable**: a photograph keeps the id it was first given, and a new
-#' one takes the next number up. Nothing is keyed by position in the file, so
-#' adding photographs never renumbers the rendered copies of the old ones.
+#' Ids are stable: a photograph keeps the id it was first given, and a new one
+#' takes the next number up. Nothing is keyed by position in the file, so
+#' adding photographs does not renumber the rendered copies of existing ones.
 #'
-#' Photographs that have disappeared from `photo_root` drop out of the
-#' catalogue. Their sidecars are left exactly where they are -- what was said
-#' about a photograph outlives the file.
+#' Photographs no longer present in `photo_root` drop out of the catalogue.
+#' Their sidecars are left in place.
 #'
 #' @param config A work directory, a config path, or a config list.
 #' @param quiet Suppress progress messages.

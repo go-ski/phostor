@@ -30,7 +30,7 @@ test_that("the path records what happened, in order", {
   expect_equal(x$event, c("start", "show", "leave", "show", "end"))
   expect_equal(x$rel_path, c("-", "top.jpg", "top.jpg", "Trips/x.png", "-"))
   expect_equal(x$duration[3], "94.2")
-  # Absent values are a dash, never an empty cell that shifts the columns.
+  # Absent values are a dash, not an empty cell, which would shift columns.
   expect_equal(x$visit[1], "-")
   expect_true(all(nzchar(unlist(x))))
 })
@@ -60,7 +60,7 @@ test_that("awkward filenames survive the tab-separated round trip", {
   expect_equal(ph_path_read(d)$rel_path[2], rel)
 })
 
-test_that("the playlist is the completed visits, in the order taken", {
+test_that("the playlist holds the completed visits in view order", {
   p <- make_project()
   d <- ph_path_new(p$cfg)
   ph_path_append(d, "show", rel_path = "top.jpg", visit = 1L)
@@ -79,8 +79,8 @@ test_that("the playlist is the completed visits, in the order taken", {
   expect_equal(pl$rel_path, c("top.jpg", "Trips/x.png", "top.jpg"))
   expect_equal(pl$visit, c(1L, 1L, 2L))
   expect_equal(pl$audio[1], "top.jpg/visit-0001.webm")
-  # A visit that recorded nothing -- no sidecar at all -- still gets its turn
-  # on screen, driven by the duration the path remembers.
+  # A visit that recorded nothing, and so has no sidecar, is still replayed,
+  # using the duration recorded in the path.
   expect_true(is.na(pl$audio[2]))
   expect_equal(pl$duration[2], 12)
   idx <- ph_read_index(p$cfg)
@@ -107,7 +107,7 @@ test_that("sessions are listed newest first with their visit counts", {
   expect_equal(s$dir, d)
 })
 
-test_that("reading a missing or empty path is empty, not an error", {
+test_that("reading a missing or empty path returns an empty frame", {
   p <- make_project()
   expect_equal(nrow(ph_path_read(tempfile())), 0L)
   expect_equal(nrow(ph_sessions(p$cfg)), 0L)
@@ -120,12 +120,11 @@ test_that("the audio a visit recorded is read from its sidecar", {
   # No sidecar yet: nothing was kept, so there is nothing to play.
   expect_true(is.na(ph_playlist(p$cfg, d)$audio[1]))
 
-  # path.tsv deliberately does not carry the audio name, so it cannot drift
-  # away from what is actually on disk.
+  # path.tsv does not carry the audio name, so it cannot drift from disk.
   ph_write_sidecar(p$cfg, "top.jpg", 1L,
                    list(audio = "visit-0001.webm", duration = 91.5))
   pl <- ph_playlist(p$cfg, d)
   expect_equal(pl$audio[1], "top.jpg/visit-0001.webm")
-  expect_equal(pl$duration[1], 91.5)   # the sidecar wins over the path row
+  expect_equal(pl$duration[1], 91.5)   # the sidecar takes precedence
   expect_false("audio" %in% ph_path_cols)
 })
