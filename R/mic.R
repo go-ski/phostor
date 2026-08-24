@@ -10,14 +10,15 @@
 # level, getUserMedia() rejects with NotFoundError, and the error name alone
 # does not indicate the remedy.
 
-# Every error name phostor explains. `insecure` and `nocodec` are phostor's
-# own, sent by app.R when there is no getUserMedia and when MediaRecorder
-# cannot produce WebM/Opus.
+# Every error name phostor explains. `insecure`, `nocodec` and `norecorder`
+# are phostor's own, sent by app.R when there is no getUserMedia, when
+# MediaRecorder cannot produce WebM/Opus, and when a recorder that a visit
+# needs did not start.
 ph_mic_errors <- c(
   "NotFoundError", "DevicesNotFoundError", "OverconstrainedError",
   "NotAllowedError", "PermissionDeniedError",
   "NotReadableError", "TrackStartError", "AbortError",
-  "SecurityError", "TypeError", "insecure", "nocodec"
+  "SecurityError", "TypeError", "insecure", "nocodec", "norecorder"
 )
 
 # Browsers whose MediaRecorder produces WebM/Opus, whose chunks concatenate
@@ -125,6 +126,13 @@ ph_mic_advice <- function(why, browser = NULL) {
     nocodec = paste(
       sprintf("%s cannot record Opus in WebM, the format phostor stores.", b),
       "Use Chrome or Firefox; Safari does not support it."),
+    # Raised mid-sitting, when a microphone that was working stops being
+    # available. Said plainly because nothing is being recorded from here on.
+    norecorder = paste(
+      "Recording has stopped: the microphone is no longer available to",
+      sprintf("%s, and nothing is being recorded now.", b),
+      "Check that it is still connected. Quit any program that may have",
+      "taken it, then press 'Try the microphone again'."),
     paste(
       sprintf("The microphone did not open, and %s reported '%s'.", b,
               if (nzchar(why)) why else "no reason"),

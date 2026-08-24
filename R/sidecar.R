@@ -18,8 +18,8 @@
 # always written as null in this version, so a later offline pass can fill it
 # in without a format change and readers can rely on the key existing.
 ph_sidecar_fields <- c("photo", "visit", "session", "started", "ended",
-                       "duration", "audio", "people", "place", "event",
-                       "when", "transcript")
+                       "duration", "audio", "bytes_expected", "people",
+                       "place", "event", "when", "transcript")
 
 #' The directory holding one photograph's visits.
 #'
@@ -84,8 +84,9 @@ ph_visit_stem <- function(visit) sprintf("visit-%04d", as.integer(visit))
 #' @param rel_path Path of the photograph relative to `photo_root`.
 #' @param visit Visit number.
 #' @param fields A named list of sidecar fields to record: any of `session`,
-#'   `started`, `ended`, `duration`, `audio`, `people`, `place`, `event`,
-#'   `when`. Unknown names are ignored; `photo` and `visit` are set here.
+#'   `started`, `ended`, `duration`, `audio`, `bytes_expected`, `people`,
+#'   `place`, `event`, `when`. Unknown names are ignored; `photo` and `visit`
+#'   are set here.
 #' @return The path written, invisibly.
 #' @examples
 #' \dontrun{

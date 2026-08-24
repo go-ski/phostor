@@ -59,6 +59,20 @@ function expectValidWebm(file, minBytes = 512) {
   ).toBe(true);
 }
 
+// Total bytes MediaRecorder produced, summed over every visit this page has
+// recorded. Compared against the files on disk: everything the microphone
+// produced must have reached one.
+async function bytesProduced(page) {
+  return page.evaluate(() =>
+    Object.values((window.PH && window.PH.bytesBy) || {})
+          .reduce((a, b) => a + b, 0));
+}
+
+// Total size of every visit audio file the project holds.
+function bytesStored() {
+  return visitFiles('.webm').reduce((a, f) => a + fs.statSync(f).size, 0);
+}
+
 // Wait for the mic to reach a state, using the app's DOM hooks rather than a
 // sleep. body[data-ph-mic] is off | arming | on | error.
 async function micState(page, state) {
@@ -108,6 +122,14 @@ async function photoIds(page) {
 }
 
 async function openPhoto(page, id) {
+  // A row in a collapsed directory is present but not clickable. The app opens
+  // ancestors itself when it navigates; a spec clicking directly must do the
+  // same first.
+  await page.evaluate((i) => {
+    const el = document.getElementById('ph-p-' + i);
+    let p = el && el.parentElement;
+    while (p) { if (p.tagName === 'DETAILS') p.open = true; p = p.parentElement; }
+  }, id);
   await page.click(`#ph-p-${id}`);
   await page.waitForFunction(
     (i) => document.getElementById('ph-photo').src.includes(`/display/${i}.jpg`),
@@ -117,4 +139,5 @@ async function openPhoto(page, id) {
 
 module.exports = { WORK, PHOTOS, sidecars, visitFiles, pathRows,
                    expectValidWebm, micState, waitForVisitChunks, photoIds,
-                   openPhoto, sessionCount, recordShortSitting };
+                   openPhoto, sessionCount, recordShortSitting,
+                   bytesProduced, bytesStored };

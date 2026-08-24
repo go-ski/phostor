@@ -449,3 +449,181 @@ test_that("pause and a failed microphone are different states", {
   expect_match(src, "Try the microphone again", fixed = TRUE)
   expect_match(src, "rv$paused", fixed = TRUE)
 })
+
+# --- audio integrity --------------------------------------------------------
+# The client-side race that dropped every visit's final chunk is covered by
+# tests/browser/. These cover the server's half of the same protocol: what it
+# does with a chunk that arrives late, twice, or for a visit that was thrown
+# away, and what it reports when the audio it stored falls short.
+
+test_that("a chunk that arrives after the visit closed is still stored", {
+  p <- app_project()
+  idx <- ph_read_index(p$cfg)
+  ord <- ph_tree_order(idx)
+  rel_of <- function(id) idx$rel_path[match(id, idx$id)]
+  set.seed(3)
+  a <- as.raw(sample(0:255, 300, replace = TRUE))
+  b <- as.raw(sample(0:255, 120, replace = TRUE))
+  enc <- base64enc::base64encode
+
+  shiny::testServer(app_dir_for(p), {
+    session$setInputs(start = 1)
+    session$setInputs(mic_ready = list(ok = TRUE, mime = "audio/webm"))
+    session$setInputs(audio_chunk = list(key = "v1", seq = 1, b64 = enc(a),
+                                         last = FALSE))
+    session$setInputs(photo_pick = ord[2])
+    # The browser reports what it recorded, including a chunk still in flight.
+    session$setInputs(visit_done = list(key = "v1", at = 1,
+                                        bytes = length(a) + length(b)))
+    # Short by one chunk at this point, so it is flagged.
+    expect_match(as.character(output$integrity_warn$html), "incomplete")
+
+    # ...and here that chunk arrives.
+    session$setInputs(audio_chunk = list(key = "v1", seq = 2, b64 = enc(b),
+                                         last = TRUE))
+    # The file is whole again, so the warning no longer stands.
+    expect_false(any(grepl("incomplete",
+                           as.character(output$integrity_warn$html))))
+
+    session$setInputs(stop_sitting = 1)
+    session$setInputs(visit_done = list(key = "v2", at = 2, bytes = 0))
+  })
+
+  v <- ph_visits_for(p$cfg, rel_of(ord[1]))
+  expect_length(v, 1L)
+  got <- readBin(v[[1]]$audio_path, "raw", n = 1e6)
+  expect_identical(got, c(a, b))
+  expect_equal(v[[1]]$bytes_expected, length(a) + length(b))
+})
+
+test_that("a chunk resent by the retry is written only once", {
+  p <- app_project()
+  idx <- ph_read_index(p$cfg)
+  ord <- ph_tree_order(idx)
+  rel_of <- function(id) idx$rel_path[match(id, idx$id)]
+  set.seed(4)
+  a <- as.raw(sample(0:255, 200, replace = TRUE))
+  enc <- base64enc::base64encode
+
+  shiny::testServer(app_dir_for(p), {
+    session$setInputs(start = 1)
+    session$setInputs(mic_ready = list(ok = TRUE, mime = "audio/webm"))
+    session$setInputs(audio_chunk = list(key = "v1", seq = 1, b64 = enc(a),
+                                         last = FALSE))
+    # The client's 4-second retry resends the same chunk. Sequence numbers are
+    # monotonic per page, so the repeat must not be appended a second time.
+    session$setInputs(audio_chunk = list(key = "v1", seq = 1, b64 = enc(a),
+                                         last = FALSE))
+    session$setInputs(photo_pick = ord[2])
+    session$setInputs(visit_done = list(key = "v1", at = 1, bytes = length(a)))
+    session$setInputs(stop_sitting = 1)
+    session$setInputs(visit_done = list(key = "v2", at = 2, bytes = 0))
+  })
+
+  v <- ph_visits_for(p$cfg, rel_of(ord[1]))
+  got <- readBin(v[[1]]$audio_path, "raw", n = 1e6)
+  expect_identical(got, a)
+})
+
+test_that("a chunk for a discarded visit is thrown away, not appended", {
+  p <- app_project()
+  idx <- ph_read_index(p$cfg)
+  ord <- ph_tree_order(idx)
+  set.seed(5)
+  a <- as.raw(sample(0:255, 150, replace = TRUE))
+  enc <- base64enc::base64encode
+
+  shiny::testServer(app_dir_for(p), {
+    session$setInputs(start = 1)
+    session$setInputs(mic_ready = list(ok = TRUE, mime = "audio/webm"))
+    session$setInputs(audio_chunk = list(key = "v1", seq = 1, b64 = enc(a),
+                                         last = FALSE))
+    session$setInputs(discard = 1)
+    session$setInputs(drop_done = list(key = "v1", at = 1))
+    # A chunk from the discarded recorder, still on the wire.
+    session$setInputs(audio_chunk = list(key = "v1", seq = 2, b64 = enc(a),
+                                         last = TRUE))
+    session$setInputs(stop_sitting = 1)
+    session$setInputs(visit_done = list(key = "v2", at = 2, bytes = 0))
+  })
+
+  # The discarded take left nothing behind, in any form.
+  expect_equal(ph_orphan_audio(p$cfg), character(0))
+  expect_false(any(grepl("visit-0001\\.webm$",
+                         list.files(p$cfg$sidecar_dir, recursive = TRUE))))
+})
+
+test_that("audio that never arrives is reported and recorded", {
+  p <- app_project()
+  idx <- ph_read_index(p$cfg)
+  ord <- ph_tree_order(idx)
+  rel_of <- function(id) idx$rel_path[match(id, idx$id)]
+  set.seed(6)
+  a <- as.raw(sample(0:255, 100, replace = TRUE))
+
+  shiny::testServer(app_dir_for(p), {
+    session$setInputs(start = 1)
+    session$setInputs(mic_ready = list(ok = TRUE, mime = "audio/webm"))
+    session$setInputs(audio_chunk = list(
+      key = "v1", seq = 1, b64 = base64enc::base64encode(a), last = FALSE))
+    session$setInputs(photo_pick = ord[2])
+    # The browser recorded far more than reached the file, and nothing follows.
+    session$setInputs(visit_done = list(key = "v1", at = 1, bytes = 5000))
+    html <- as.character(output$integrity_warn$html)
+    expect_match(html, "incomplete")
+    expect_match(html, "kB recorded")
+    session$setInputs(stop_sitting = 1)
+    session$setInputs(visit_done = list(key = "v2", at = 2, bytes = 0))
+  })
+
+  # The shortfall is in the sidecar too, so it survives the session.
+  v <- ph_visits_for(p$cfg, rel_of(ord[1]))
+  expect_equal(v[[1]]$bytes_expected, 5000)
+  expect_lt(file.size(v[[1]]$audio_path), 5000)
+})
+
+test_that("pause waits for the visit before stopping the microphone", {
+  app <- app_file(); skip_if(is.null(app))
+  src <- paste(readLines(app), collapse = "\n")
+  # ph_disarm stops the microphone tracks, which would cut off a recorder still
+  # flushing its last chunk. It must go through finish_pause(), which waits for
+  # rv$pending to drain, exactly as finish_sitting() does.
+  expect_match(src, "finish_pause", fixed = TRUE)
+  expect_match(src, "rv$pausing", fixed = TRUE)
+})
+
+test_that("a chunk that cannot be written is reported, not left to retry", {
+  p <- app_project()
+  idx <- ph_read_index(p$cfg)
+  ord <- ph_tree_order(idx)
+  rel_of <- function(id) idx$rel_path[match(id, idx$id)]
+  set.seed(7)
+  a <- as.raw(sample(0:255, 120, replace = TRUE))
+  enc <- base64enc::base64encode
+  vdir <- ph_visit_dir(p$cfg, rel_of(ord[1]))
+
+  shiny::testServer(app_dir_for(p), {
+    session$setInputs(start = 1)
+    session$setInputs(mic_ready = list(ok = TRUE, mime = "audio/webm"))
+    session$setInputs(audio_chunk = list(key = "v1", seq = 1, b64 = enc(a)))
+
+    # The drive goes away mid-sitting, and the append raises rather than
+    # returning. Left to propagate it would skip the acknowledgement, and the
+    # client would retry this chunk for ever: the visit could never finalize
+    # and End sitting would never answer.
+    unlink(vdir, recursive = TRUE)
+    expect_no_error(
+      session$setInputs(audio_chunk = list(key = "v1", seq = 2, b64 = enc(a))))
+    expect_match(as.character(output$integrity_warn$html),
+                 "could not be written")
+
+    # The visit still closes, and the sitting still ends.
+    session$setInputs(photo_pick = ord[2])
+    session$setInputs(visit_done = list(key = "v1", at = 1,
+                                        bytes = 2 * length(a)))
+    session$setInputs(stop_sitting = 1)
+    session$setInputs(visit_done = list(key = "v2", at = 2, bytes = 0))
+    expect_null(rv$session_dir)
+    expect_length(rv$pending, 0L)
+  })
+})

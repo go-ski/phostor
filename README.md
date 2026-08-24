@@ -158,6 +158,7 @@ started: '2026-08-23T20:14:07Z'
 ended: '2026-08-23T20:15:41Z'
 duration: 94.2
 audio: visit-0003.webm
+bytes_expected: 812344
 people:
 - Nana Vera
 - Uncle Stefan
@@ -172,6 +173,10 @@ transcript: ~
 EXIF: on a scanned print the EXIF date is the date of the scan. `transcript` is
 reserved so a later offline pass can fill it in without a format change; the
 key is written now and readers can rely on it existing.
+
+`bytes_expected` is how much audio the browser reported recording for the
+visit. If it exceeds the size of the `.webm` beside it, some audio did not
+reach disk, and the app said so at the time.
 
 These are plain YAML files with a comment at the top, and can be hand-edited.
 phostor only adds files.
@@ -217,11 +222,35 @@ phostor does not delete it. `ph_status()` reports them.
 Chunks from a single recorder concatenate into a valid WebM, so no `ffmpeg` or
 muxing step is needed. phostor pins the recording format for the same reason.
 
-Chunks are acknowledged one at a time. Shiny coalesces repeated writes to one
-input within a flush, so sending without waiting for an acknowledgement would
-lose whichever chunk arrived second. The server also ignores any chunk whose
-visit it does not recognise, which is what makes the start, stop and discard
-races safe: audio from a superseded recorder is dropped.
+Chunks are acknowledged one at a time, and an acknowledgement is matched
+against the chunk in flight. Shiny coalesces repeated writes to one input
+within a flush, so sending without waiting would lose whichever chunk arrived
+second; and a retry can put two copies of one chunk on the wire, so the server
+skips any sequence number it has already written.
+
+A visit is reported finished only once its recorder has stopped **and** every
+chunk it produced has been acknowledged. `MediaRecorder.stop()` is
+asynchronous: it flushes a final chunk on a later tick, and reporting the visit
+done before that arrives would rename the file out from under it. A chunk that
+still arrives late is appended to the finished file rather than dropped;
+chunks belonging to a discarded visit are dropped.
+
+The browser also counts the bytes it handed over, and the server compares that
+with the file it wrote. A shortfall is shown in the sitting bar and recorded as
+`bytes_expected` in the sidecar, because a sitting cannot be repeated. A write
+that fails outright, and a recorder that stops being able to record, are both
+said out loud there too rather than passing in silence.
+
+Because chunks from two recorders cannot be concatenated, a visit records from
+one recorder and one microphone throughout. **Check microphone** therefore
+listens to the microphone a sitting already has rather than reopening it, and
+the input picker is locked until the sitting is paused.
+
+One case is not recovered: closing the browser tab mid-visit loses whatever
+audio is still queued in the page. What reached disk is kept — the visit's
+file is renamed and its sidecar written — but no total arrives from the
+browser, so `bytes_expected` is empty and nothing flags the shortfall. End the
+sitting rather than closing the tab.
 
 ## Read-only guarantee
 

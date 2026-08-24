@@ -178,3 +178,168 @@ test('pause closes the visit and resume opens a new one', async ({ page }) => {
   expect(ev).toContain('pause');
   expect(ev).toContain('resume');
 });
+
+// --- audio completeness -----------------------------------------------------
+// The specs above prove each .webm is a valid container. They do not prove it
+// holds everything the microphone produced, which is how the dropped-final-
+// chunk bug survived them.
+
+test('every byte the microphone produced reached a file', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  const ids = await H.photoIds(page);
+  // window.PH counts only this page's visits, so compare against the growth of
+  // the store rather than its total, which includes the specs above.
+  const storedBefore = H.bytesStored();
+
+  await page.click('#start');
+  await page.waitForSelector('.modal-content');
+  await page.click('.modal-footer button');
+  await H.micState(page, 'on');
+
+  // Three visits, each long enough to cross at least one chunk boundary, so
+  // there is both a mid-visit chunk and a tail flushed by stop().
+  await H.waitForVisitChunks(page, 2);
+  await H.openPhoto(page, ids[1]);
+  await H.waitForVisitChunks(page, 2);
+  await H.openPhoto(page, ids[2]);
+  await H.waitForVisitChunks(page, 2);
+
+  await page.click('#stop_sitting');
+  await page.waitForSelector('.modal-content:has-text("Sitting ended")');
+  await page.click('.modal-footer button');
+
+  // MediaRecorder counts what it handed to the page; the filesystem counts what
+  // was stored. A tail dropped at close makes stored fall short of produced.
+  const produced = await H.bytesProduced(page);
+  expect(produced).toBeGreaterThan(0);
+  expect(H.bytesStored() - storedBefore).toBe(produced);
+
+  // And nothing was reported as incomplete on screen.
+  expect(await page.locator('.ph-warn-integrity').count()).toBe(0);
+});
+
+test('a visit shorter than one chunk still records its audio', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  const ids = await H.photoIds(page);
+  const before = H.visitFiles('.webm').length;
+
+  await page.click('#start');
+  await page.waitForSelector('.modal-content');
+  await page.click('.modal-footer button');
+  await H.micState(page, 'on');
+
+  // Leave before a single chunk interval has elapsed. Everything recorded is
+  // in the tail that stop() flushes, so if that tail is lost the visit has no
+  // audio at all rather than merely a short file.
+  await page.waitForFunction(() => !!document.body.dataset.phVisit);
+  await H.openPhoto(page, ids[1]);
+
+  await page.click('#stop_sitting');
+  await page.waitForSelector('.modal-content:has-text("Sitting ended")');
+  await page.click('.modal-footer button');
+
+  const webms = H.visitFiles('.webm');
+  expect(webms.length).toBeGreaterThan(before);
+  for (const f of webms.slice(before)) H.expectValidWebm(f, 64);
+  expect(H.visitFiles('.part').length).toBe(0);
+});
+
+// --- the protocol under interference ----------------------------------------
+// A sitting cannot be repeated, so the ways a recorder can be taken away
+// mid-visit matter as much as the happy path.
+
+test('checking the microphone mid-sitting does not cut the recording', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  const ids = await H.photoIds(page);
+  const storedBefore = H.bytesStored();
+
+  await page.click('#start');
+  await page.waitForSelector('.modal-content');
+  await page.click('.modal-footer button');
+  await H.micState(page, 'on');
+  await H.waitForVisitChunks(page, 2);
+
+  // Reopening the microphone here would hand the page a second MediaStream and
+  // end the tracks the live recorder is reading, stopping it with nothing on
+  // screen to say so. The check must meter the stream the sitting already has.
+  await page.click('#mic_check_btn');
+  await page.waitForSelector('#ph-mic-panel:visible');
+  await expect(page.locator('#ph-mic-sitting')).toBeVisible();
+  await expect(page.locator('#ph-mic-device')).toBeDisabled();
+  await page.click('#ph-mic-close');
+
+  // Still the same visit, still recording: its chunk count keeps climbing.
+  const n = await page.evaluate(() =>
+    parseInt(document.body.dataset.phVisitChunks || '0', 10));
+  await H.waitForVisitChunks(page, n + 2);
+
+  await H.openPhoto(page, ids[1]);
+  await H.waitForVisitChunks(page, 2);
+  await page.click('#stop_sitting');
+  await page.waitForSelector('.modal-content:has-text("Sitting ended")');
+  await page.click('.modal-footer button');
+
+  const produced = await H.bytesProduced(page);
+  expect(produced).toBeGreaterThan(0);
+  expect(H.bytesStored() - storedBefore).toBe(produced);
+  expect(await page.locator('.ph-warn-integrity').count()).toBe(0);
+});
+
+test('a visit whose recorder never reports stopping still finalises', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  const ids = await H.photoIds(page);
+  const before = H.visitFiles('.webm').length;
+
+  await page.click('#start');
+  await page.waitForSelector('.modal-content');
+  await page.click('.modal-footer button');
+  await H.micState(page, 'on');
+  await H.waitForVisitChunks(page, 2);
+
+  // Break the one signal the close path waits on. Unbounded, that wait leaves
+  // the visit unfinalised for ever: End sitting never answers and the .part is
+  // never renamed.
+  await page.evaluate(() => { window.PH.rec.onstop = function () {}; });
+
+  await H.openPhoto(page, ids[1]);
+  await H.waitForVisitChunks(page, 1);
+  await page.click('#stop_sitting');
+  await page.waitForSelector('.modal-content:has-text("Sitting ended")',
+                             { timeout: 30000 });
+  await page.click('.modal-footer button');
+
+  expect(H.visitFiles('.webm').length).toBeGreaterThan(before);
+  expect(H.visitFiles('.part').length).toBe(0);
+});
+
+test('a recorder that cannot start says so instead of showing REC', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  const ids = await H.photoIds(page);
+
+  await page.click('#start');
+  await page.waitForSelector('.modal-content');
+  await page.click('.modal-footer button');
+  await H.micState(page, 'on');
+  await H.waitForVisitChunks(page, 1);
+
+  // Take the stream away, the way an unplugged interface or a revoked
+  // permission does. The next visit gets no recorder at all, and the server
+  // has already opened a .part for it.
+  await page.evaluate(() => { window.PH.stream = null; });
+  await H.openPhoto(page, ids[1]);
+
+  // The bar must stop claiming to record, and say what to do about it.
+  await H.micState(page, 'error');
+  await expect(page.locator('.ph-rec')).not.toHaveClass(/\bon\b/);
+  await expect(page.locator('#sitting_info')).toContainText(/microphone/i);
+
+  await page.click('#stop_sitting');
+  await page.waitForSelector('.modal-content:has-text("Sitting ended")');
+  await page.click('.modal-footer button');
+  expect(H.visitFiles('.part').length).toBe(0);
+});

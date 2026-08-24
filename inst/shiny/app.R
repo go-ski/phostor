@@ -143,7 +143,8 @@ ph_js <- "
     order:[], current:null, chunkMs:5000,
     play:null, playIdx:0, audio:null,
     deviceId:null, sitting:false, checkOwnsStream:false, ac:null, meter:null,
-    visitKey:'', ackedBy:{}
+    visitKey:'', ackedBy:{}, bytesBy:{}, stopped:{}, dropped:{},
+    closeTimer:{}
   };
   window.PH = PH;
 
@@ -163,37 +164,73 @@ ph_js <- "
       PH.sending = false; pump();
     }, 4000);
   }
-  function acked(){
+  function acked(seq){
+    var head = PH.q[0];
+    // Ignore an acknowledgement that does not match the chunk in flight. The
+    // retry below can put two copies of one chunk on the wire, and shifting
+    // twice would discard the chunk behind it, which was never sent.
+    //
+    // Coerced rather than compared strictly: the number makes a round trip
+    // through R and JSON, and a '7' or a [7] arriving here would reject every
+    // acknowledgement and stall the queue for the rest of the sitting.
+    var s = (seq == null) ? null : Number(seq);
+    if (!head || (s !== null && head.seq !== s)) return;
     clearTimeout(PH.retry);
-    var c = PH.q.shift();
-    bumpChunks(c && c.key);
+    PH.q.shift();
+    bumpChunks(head.key);
     PH.sending = false;
-    if (c) {
-      PH.pending[c.key] = (PH.pending[c.key] || 1) - 1;
-      maybeDone(c.key);
-    }
+    PH.pending[head.key] = (PH.pending[head.key] || 1) - 1;
+    maybeDone(head.key);
     pump();
   }
-  function queue(key, blob, last){
+  function queue(key, blob){
     var r = new FileReader();
     PH.pending[key] = (PH.pending[key] || 0) + 1;
     r.onloadend = function(){
       var s = String(r.result);
-      PH.q.push({key:key, seq:++PH.seq, b64:s.slice(s.indexOf(',')+1),
-                 last:!!last});
+      PH.q.push({key:key, seq:++PH.seq, b64:s.slice(s.indexOf(',')+1)});
       pump();
     };
     r.readAsDataURL(blob);
   }
   // A visit is finished only once its recorder has stopped and every chunk it
-  // produced has been acknowledged. Reporting it earlier would let the server
-  // rename a .part file that still has bytes arriving.
+  // produced has been acknowledged.
+  //
+  // MediaRecorder.stop() is asynchronous: the final dataavailable fires on a
+  // later tick and onstop after it. Reporting the visit done before onstop
+  // lets the server rename the .part file while its last chunk is still being
+  // read, and that chunk then arrives with a key the server has forgotten.
+  // stopped[key] is false only while a recorder for that key is running, so a
+  // visit that never got one is treated as already stopped.
   function maybeDone(key){
     if (!PH.closing[key]) return;
+    if (PH.stopped[key] === false) return;
     if ((PH.pending[key] || 0) > 0) return;
-    delete PH.closing[key];
     delete PH.pending[key];
-    send('visit_done', {key:key, at:Date.now()});
+    delete PH.stopped[key];
+    reportDone(key);
+  }
+  // The one place visit_done is sent, so the timer below is always cleared
+  // with it. `bytes` is what MediaRecorder produced, which the server checks
+  // against the file it wrote.
+  function reportDone(key){
+    delete PH.closing[key];
+    clearTimeout(PH.closeTimer[key]);
+    delete PH.closeTimer[key];
+    send('visit_done', {key:key, at:Date.now(),
+                        bytes:(PH.bytesBy[key] || 0)});
+  }
+  // Nothing else bounds that wait. A recorder that errors, or whose tracks the
+  // system ends, may never fire onstop, and the visit would then stay open for
+  // ever: the server never renames its .part, and End sitting never answers.
+  // Report it once the wait is longer than any flush could take, and let the
+  // byte comparison say what is missing. Chunks still queued are left where
+  // they are -- the server appends a late arrival to the finished file.
+  function armCloseTimer(key){
+    clearTimeout(PH.closeTimer[key]);
+    PH.closeTimer[key] = setTimeout(function(){
+      if (PH.closing[key]) reportDone(key);
+    }, Math.max(10000, 3 * PH.chunkMs));
   }
 
   // ---- DOM state hooks ---------------------------------------------------
@@ -223,6 +260,8 @@ ph_js <- "
   function showVisitChunks(){
     document.body.dataset.phVisitChunks =
       String((PH.visitKey && PH.ackedBy[PH.visitKey]) || 0);
+    document.body.dataset.phVisitBytes =
+      String((PH.visitKey && PH.bytesBy[PH.visitKey]) || 0);
   }
   function el(id){ return document.getElementById(id); }
   function setText(id, t){ var e = el(id); if (e) e.textContent = t; }
@@ -343,15 +382,29 @@ ph_js <- "
     PH.mime = pickMime();
     var env = {secure: !!window.isSecureContext, hasMedia: haveMedia(),
                mimes: mimeList(), ua: navigator.userAgent};
-    openMic().then(function(s){
-      if (PH.stream && PH.stream !== s) stopStream(PH.stream);
-      PH.stream = s;
-      PH.checkOwnsStream = !PH.sitting;
+
+    // getUserMedia() hands back a new MediaStream every time, and taking the
+    // old one down ends the tracks the sitting's recorder is reading -- which
+    // stops it with nothing on screen to say so. So while a sitting is in
+    // progress the check meters the stream already open. Changing input needs
+    // a pause: chunks from two recorders cannot be concatenated, so a new
+    // stream has to start a new visit.
+    var reuse = !!(PH.sitting && PH.stream && PH.stream.active !== false);
+    var note = el('ph-mic-sitting');
+    if (note) note.style.display = reuse ? 'block' : 'none';
+
+    (reuse ? Promise.resolve(PH.stream) : openMic()).then(function(s){
+      if (!reuse) {
+        if (PH.stream && PH.stream !== s) stopStream(PH.stream);
+        PH.stream = s;
+        PH.checkOwnsStream = !PH.sitting;
+      }
       setMic('on');
       meterStart(s);
       return listInputs().then(function(devs){
-        fillDevices(devs);
-        send('mic_check', Object.assign({ok: true, devices: devs}, env));
+        fillDevices(devs, reuse);
+        send('mic_check', Object.assign({ok: true, devices: devs,
+                                         sitting: reuse}, env));
       });
     }).catch(function(err){
       setMic('error');
@@ -360,7 +413,7 @@ ph_js <- "
     });
   }
 
-  function fillDevices(devs){
+  function fillDevices(devs, lock){
     var sel = el('ph-mic-device');
     if (!sel) return;
     sel.innerHTML = '';
@@ -370,7 +423,8 @@ ph_js <- "
       if (PH.deviceId === d.id) o.selected = true;
       sel.appendChild(o);
     });
-    sel.disabled = devs.length < 2;
+    // Locked while a sitting runs: switching input restarts the stream.
+    sel.disabled = !!lock || devs.length < 2;
   }
 
   function testRecord(){
@@ -402,17 +456,45 @@ ph_js <- "
     }
     PH.checkOwnsStream = false;
   }
+  // The server has already opened a .part for this visit and still believes
+  // the microphone is armed, so a recorder that fails to start must say so:
+  // otherwise the bar reads REC over a file nothing is written to. mic_ready
+  // is the channel the indicator and the advice line already watch.
+  function noRecorder(why){
+    setMic('error');
+    send('mic_ready', {ok:false, why:why || 'norecorder'});
+  }
   function startRec(key){
-    if (!PH.stream || !PH.mime) return;
-    stopRec(false);
+    if (!PH.mime) { noRecorder('nocodec'); return; }
+    // `active` is false once every track has ended, which is what an unplugged
+    // interface or a revoked permission leaves behind.
+    if (!PH.stream || PH.stream.active === false) { noRecorder(); return; }
+    stopRec();
     try {
       PH.rec = new MediaRecorder(PH.stream, {mimeType: PH.mime});
-    } catch (e) { PH.rec = null; return; }
+    } catch (e) { PH.rec = null; noRecorder(); return; }
     PH.key = key;
-    PH.rec.ondataavailable = function(e){
-      if (e.data && e.data.size > 0) queue(key, e.data, false);
+    PH.stopped[key] = false;
+    PH.rec.onerror = function(){
+      // Gave up mid-visit. Its tail is lost either way; saying so is what
+      // stops the rest of the sitting being recorded into nothing.
+      PH.stopped[key] = true;
+      maybeDone(key);
+      noRecorder();
     };
-    PH.rec.onstop = function(){ maybeDone(key); };
+    PH.rec.ondataavailable = function(e){
+      if (!e.data || e.data.size <= 0) return;
+      if (PH.dropped[key]) return;          // a discarded take keeps nothing
+      // What the microphone produced, against which what reached disk is
+      // checked when the visit closes.
+      PH.bytesBy[key] = (PH.bytesBy[key] || 0) + e.data.size;
+      showVisitChunks();
+      queue(key, e.data);
+    };
+    PH.rec.onstop = function(){
+      PH.stopped[key] = true;
+      maybeDone(key);
+    };
     // Chunks from a single recorder concatenate into a valid WebM, so the
     // server can append them to disk with no muxing step.
     PH.rec.start(PH.chunkMs);
@@ -548,6 +630,7 @@ ph_js <- "
     wire('ph-mic-close', closeCheck);
     var dev = el('ph-mic-device');
     if (dev) dev.onchange = function(){
+      if (PH.sitting) return;           // locked mid-sitting; see runCheck()
       PH.deviceId = dev.value || null;
       runCheck();                       // reopen on the newly chosen device
     };
@@ -559,19 +642,27 @@ ph_js <- "
       setVisit('');
       PH.closing[m.key] = true;
       if (PH.rec && PH.key === m.key) stopRec();
+      armCloseTimer(m.key);
       maybeDone(m.key);
     });
     Shiny.addCustomMessageHandler('ph_visit_drop', function(m){
       // Throw away everything queued for this visit, then stop. The server
       // deletes the .part file and opens a fresh visit with a new key, so any
       // chunk still in flight lands on a key the server no longer knows.
+      PH.dropped[m.key] = true;
       PH.q = PH.q.filter(function(c){ return c.key !== m.key; });
       PH.pending[m.key] = 0;
       delete PH.closing[m.key];
+      delete PH.stopped[m.key];
+      delete PH.bytesBy[m.key];
+      clearTimeout(PH.closeTimer[m.key]);
+      delete PH.closeTimer[m.key];
       if (PH.rec && PH.key === m.key) stopRec();
       send('drop_done', {key:m.key, at:Date.now()});
     });
-    Shiny.addCustomMessageHandler('ph_chunk_ok', function(m){ acked(); });
+    Shiny.addCustomMessageHandler('ph_chunk_ok', function(m){
+      acked(m && m.seq);
+    });
     Shiny.addCustomMessageHandler('ph_play', function(m){
       PH.play = m.items || [];
       if (!PH.play.length) { playStop(true); return; }
@@ -627,6 +718,9 @@ ui <- page_sidebar(
                       "Check")),
       div(class = "ph-level", tags$i(id = "ph-level-fill")),
       div(class = "hint", "Speak: the level bar should move."),
+      div(class = "hint", id = "ph-mic-sitting", style = "display:none",
+          paste("A sitting is in progress, so this check listens to the",
+                "microphone already open. Pause the sitting to change input.")),
       div(class = "advice", id = "ph-mic-advice"),
       div(class = "detail", id = "ph-mic-detail"),
       div(class = "row2 mt-2",
@@ -639,6 +733,7 @@ ui <- page_sidebar(
       tags$audio(id = "ph-test-audio", controls = NA)
     ),
     uiOutput("browser_banner"),
+    uiOutput("integrity_warn"),
     div(class = "ph-img-wrap", tags$img(id = "ph-photo", alt = "")),
     div(id = "ph-cap", class = "ph-cap"),
     div(class = "ph-play-strip ph-hide", tags$i(id = "ph-play-fill")),
@@ -670,6 +765,12 @@ server <- function(input, output, session) {
     armed = FALSE,           # microphone open
     mic_msg = NULL,
     paused = FALSE,          # Pause pressed, as against arming having failed
+    pausing = FALSE,         # Pause pressed, waiting for the visit to drain
+    closed = list(),         # finalized visit key -> its final audio path
+    dropped = list(),        # discarded visit key -> TRUE
+    lastseq = list(),        # visit key -> highest chunk seq already written
+    expected = list(),       # visit key -> bytes the browser said it recorded
+    warnings = list(),       # visit key -> audio that did not arrive intact
     env = NULL,              # what the browser told us it can do
     browser = NA_character_, # its name, from the user agent
     visit = NULL,            # the open visit
@@ -802,6 +903,12 @@ server <- function(input, output, session) {
         ph_mic_advice(why, rv$browser))
   })
 
+  output$integrity_warn <- renderUI({
+    w <- unlist(rv$warnings, use.names = FALSE)
+    if (!length(w)) return(NULL)
+    div(class = "ph-warn ph-warn-integrity", lapply(w, function(x) div(x)))
+  })
+
   observeEvent(input$mic_check_btn, tell("ph_check", list(on = TRUE)))
   observeEvent(input$mic_retry, {
     rv$paused <- FALSE
@@ -884,13 +991,24 @@ server <- function(input, output, session) {
     # Pausing closes the visit rather than leaving a gap in its audio: chunks
     # from two different recorders cannot be concatenated, and a stop and
     # restart is what a second visit already represents.
+    rv$pausing <- TRUE
     close_visit()
+    finish_pause()
+  })
+
+  # ph_disarm stops the microphone tracks, which would cut off a recorder that
+  # is still flushing its last chunk. Wait for the visit to drain first, the
+  # way finish_sitting() does.
+  finish_pause <- function() {
+    if (!isTRUE(rv$pausing) || length(rv$pending)) return(invisible(NULL))
     tell("ph_disarm", list(on = FALSE))
     rv$armed <- FALSE
     rv$paused <- TRUE
+    rv$pausing <- FALSE
     rv$mic_msg <- NULL
     if (!is.null(rv$session_dir)) ph_path_append(rv$session_dir, "pause")
-  })
+    invisible(NULL)
+  }
 
   observeEvent(input$resume, {
     rv$paused <- FALSE
@@ -956,14 +1074,32 @@ server <- function(input, output, session) {
   }
 
   observeEvent(input$visit_done, {
-    finalize_visit(as.character(input$visit_done$key))
+    finalize_visit(as.character(input$visit_done$key),
+                   bytes = input$visit_done$bytes)
   })
 
-  finalize_visit <- function(key) {
+  finalize_visit <- function(key, bytes = NA) {
     v <- rv$pending[[key]]
     if (is.null(v)) return(invisible(NULL))
     rv$pending[[key]] <- NULL
     audio <- if (!is.null(v$part)) ph_audio_close(v$part) else NA_character_
+    final <- if (!is.na(audio)) {
+      file.path(ph_visit_dir(cfg, v$rel_path), audio)
+    } else NULL
+    # Remember where this visit's audio ended up, so a chunk still in flight
+    # is appended rather than dropped.
+    if (!is.null(final)) rv$closed[[key]] <- final
+
+    # What the browser said it recorded, against what reached the file. A
+    # sitting cannot be repeated, so a shortfall is worth saying out loud.
+    expected <- suppressWarnings(as.numeric(bytes %||% NA)[1])
+    stored <- if (!is.null(final) && file.exists(final)) file.size(final) else 0
+    if (!is.na(expected) && expected > 0) rv$expected[[key]] <- expected
+    if (!is.na(expected) && expected > 0 && stored < expected) {
+      rv$warnings[[key]] <- sprintf(
+        "visit %d of %s: %.0f kB recorded, %.0f kB stored - audio may be incomplete",
+        v$visit, v$rel_path, expected / 1024, stored / 1024)
+    }
     dur <- v$duration %||% as.numeric(difftime(v$ended %||% Sys.time(),
                                                v$started, units = "secs"))
     f <- v$fields %||% list()
@@ -983,6 +1119,7 @@ server <- function(input, output, session) {
                        "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
         duration = dur,
         audio = audio,
+        bytes_expected = if (is.na(expected)) NA else expected,
         people = f$people, place = f$place, event = f$event, when = f$when))
     }
     if (keep) {
@@ -990,6 +1127,7 @@ server <- function(input, output, session) {
                             n = ph_visit_counts(cfg, v$rel_path)))
     }
     rv$tick <- rv$tick + 1L
+    finish_pause()
     finish_sitting()
     invisible(NULL)
   }
@@ -1005,6 +1143,7 @@ server <- function(input, output, session) {
     v <- rv$pending[[key]]
     if (is.null(v)) return()
     if (!is.null(v$part)) ph_audio_discard(v$part)
+    rv$dropped[[key]] <- TRUE
     rv$pending[[key]] <- NULL
     if (identical(rv$visit$key, key)) rv$visit <- NULL
     if (!is.null(rv$session_dir)) {
@@ -1018,11 +1157,50 @@ server <- function(input, output, session) {
   observeEvent(input$audio_chunk, {
     ch <- input$audio_chunk
     key <- as.character(ch$key %||% "")
-    v <- rv$pending[[key]]
-    # An unknown key is a chunk from a superseded recorder: a discarded visit,
-    # or one whose file has already been renamed. Dropping it is what makes the
-    # races above safe. Acknowledge it anyway, or the client's queue stalls.
-    if (!is.null(v) && !is.null(v$part)) ph_audio_append(v$part, ch$b64)
+    seq <- suppressWarnings(as.integer(ch$seq %||% NA))
+
+    # A chunk resent by the client's retry must not be written twice. Sequence
+    # numbers are monotonic per page, so anything at or below what this visit
+    # has already stored is a repeat.
+    last <- rv$lastseq[[key]] %||% -1L
+    if (!is.na(seq) && seq <= last) {
+      tell("ph_chunk_ok", list(seq = ch$seq))
+      return()
+    }
+
+    # Three kinds of key, in order. An open visit takes the chunk in its .part
+    # file. A visit that has already been finalized takes it appended to the
+    # renamed file -- WebM chunks concatenate, so the file stays valid, and a
+    # chunk that arrives a moment late is kept rather than lost. A discarded
+    # visit takes nothing.
+    target <- if (isTRUE(rv$dropped[[key]])) NULL
+              else if (!is.null(rv$pending[[key]])) rv$pending[[key]]$part
+              else rv$closed[[key]]
+    if (!is.null(target)) {
+      # The write can fail outright -- a removable drive unmounted, a
+      # permission changed mid-sitting. Raising here would skip the
+      # acknowledgement below, and the client would then retry this chunk for
+      # ever: the visit would never finalize and End sitting would never
+      # answer. Report it on screen and carry on.
+      # Warnings are muffled with it: a connection that cannot be opened warns
+      # and then raises, carrying the same text twice, and the message below is
+      # where the user reads it.
+      err <- tryCatch({ suppressWarnings(ph_audio_append(target, ch$b64)); NULL },
+                      error = function(e) conditionMessage(e))
+      if (is.null(err)) {
+        if (!is.na(seq)) rv$lastseq[[key]] <- seq
+        # A chunk appended after the visit closed may complete a file that was
+        # reported short, so the warning it raised no longer holds.
+        exp <- rv$expected[[key]]
+        if (!is.null(exp) && file.exists(target) && file.size(target) >= exp) {
+          rv$warnings[[key]] <- NULL
+        }
+      } else {
+        rv$warnings[[key]] <- sprintf("%s could not be written: %s",
+                                      basename(target), err)
+      }
+    }
+    # Acknowledge whatever happened, or the client's queue stalls behind it.
     tell("ph_chunk_ok", list(seq = ch$seq))
   })
 

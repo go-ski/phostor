@@ -14,8 +14,9 @@ ph_write_sidecar(cfg, rel_path, visit, fields = list())
 \item{visit}{Visit number.}
 
 \item{fields}{A named list of sidecar fields to record: any of \code{session},
-\code{started}, \code{ended}, \code{duration}, \code{audio}, \code{people}, \code{place}, \code{event},
-\code{when}. Unknown names are ignored; \code{photo} and \code{visit} are set here.}
+\code{started}, \code{ended}, \code{duration}, \code{audio}, \code{bytes_expected}, \code{people},
+\code{place}, \code{event}, \code{when}. Unknown names are ignored; \code{photo} and \code{visit}
+are set here.}
 }
 \value{
 The path written, invisibly.

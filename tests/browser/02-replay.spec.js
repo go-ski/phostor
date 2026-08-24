@@ -76,5 +76,7 @@ test('Play walks the sitting back in the order it was recorded', async ({ page }
   const strip = await page.$eval('#ph-play-fill',
                                  (e) => parseFloat(e.style.width) || 0);
   expect(strip).toBeGreaterThan(0);
-  await page.click('#play_stop');
+  // A short sitting can reach its end before we get here, which replaces Stop
+  // with the Play control again. Both are valid ends to playback.
+  if (await page.locator('#play_stop').count()) await page.click('#play_stop');
 });
