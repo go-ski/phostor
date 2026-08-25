@@ -96,10 +96,21 @@ body { background:var(--ph-bg); color:var(--ph-ink); }
   margin-top:.5rem; }
 .ph-tags .form-group { margin-bottom:.4rem; }
 .ph-tags label { color:var(--ph-dim); font-size:.78rem; margin-bottom:.1rem; }
-.ph-hist { font-size:.85rem; }
-.ph-hist audio { height:30px; vertical-align:middle; }
+.ph-hist { font-size:.85rem; max-height:38vh; overflow-y:auto; }
+.ph-hist audio { height:30px; vertical-align:middle; width:100%; max-width:22rem; }
 .ph-hist .v { border-top:1px solid var(--ph-line); padding:.4rem 0; }
-.ph-hist .vh { color:var(--ph-dim); font-size:.78rem; }
+.ph-hist .vh { color:var(--ph-dim); font-size:.78rem; display:flex;
+  align-items:center; gap:.6rem; flex-wrap:wrap; }
+.ph-hist .said { color:var(--ph-dim); font-size:.78rem; margin-top:.2rem; }
+/* The transcript. Phrases are inline so they wrap as ordinary prose; the
+   highlight moves between them as the recording plays. */
+.ph-tx { margin:.3rem 0 .1rem; line-height:1.55; }
+.ph-ph { cursor:pointer; border-radius:3px; padding:0 .1rem;
+  transition:background .12s; }
+.ph-ph:hover { background:#242932; }
+.ph-ph.on { background:var(--ph-on); color:#fff; }
+.ph-tx.plain { color:var(--ph-ink); }
+.ph-none { color:var(--ph-dim); font-style:italic; }
 
 /* Presentation mode: photograph and recording indicator only. */
 body.ph-present .bslib-sidebar-layout > .sidebar,
@@ -566,6 +577,54 @@ ph_js <- "
       while (p) { if (p.tagName === 'DETAILS') p.open = true; p = p.parentElement; }
     }
   }
+
+  // ---- transcript follow-along -------------------------------------------
+  // Two delegated listeners for every visit on screen, rather than a pair per
+  // <audio>: the panel is re-rendered whenever the photograph changes, and
+  // handlers bound to its elements would be rebound with it.
+  //
+  // Media events do not bubble, so timeupdate is caught in the capture phase.
+  // That is what makes one document-level listener see all of them.
+  function phrasesFor(audio){
+    if (!audio || !audio.id || audio.id.indexOf('ph-a-') !== 0) return null;
+    var tx = document.getElementById('ph-tx-' + audio.id.slice(5));
+    return tx ? tx.querySelectorAll('.ph-ph') : null;
+  }
+  function clearMarks(spans){
+    for (var i=0;i<spans.length;i++) spans[i].classList.remove('on');
+  }
+  document.addEventListener('timeupdate', function(e){
+    var spans = phrasesFor(e.target);
+    if (!spans || !spans.length) return;
+    var t = e.target.currentTime;
+    for (var i=0;i<spans.length;i++){
+      var s = spans[i];
+      // Up to the next phrase's start rather than this one's end, so the
+      // highlight does not blink off in the pause between two phrases.
+      var next = spans[i+1];
+      var to = next ? parseFloat(next.dataset.t0) : parseFloat(s.dataset.t1);
+      var on = t >= parseFloat(s.dataset.t0) && t < to;
+      if (on === s.classList.contains('on')) continue;
+      s.classList.toggle('on', on);
+      if (on) s.scrollIntoView({block:'nearest'});
+    }
+  }, true);
+  document.addEventListener('ended', function(e){
+    var spans = phrasesFor(e.target);
+    if (spans) clearMarks(spans);
+  }, true);
+
+  // Clicking a phrase plays from where it was said.
+  document.addEventListener('click', function(e){
+    var s = e.target.closest ? e.target.closest('.ph-ph') : null;
+    if (!s || !s.dataset.t0) return;
+    var tx = s.closest('.ph-tx');
+    if (!tx || !tx.id) return;
+    var a = document.getElementById('ph-a-' + tx.id.slice(6));
+    if (!a) return;
+    a.currentTime = parseFloat(s.dataset.t0);
+    a.play().catch(function(){});
+  });
 
   // ---- keyboard ----------------------------------------------------------
   document.addEventListener('keydown', function(e){
@@ -1300,7 +1359,34 @@ server <- function(input, output, session) {
     tell("ph_present", list(on = rv$present))
   })
 
-  # ---- prior visits ------------------------------------------------------
+  # ---- this photograph's visits ------------------------------------------
+  # What was said about the photograph on screen: each visit's recording, and
+  # its words, which light up as the recording reaches them.
+  #
+  # The transcript arrives seconds after the visit closes -- the helper runs
+  # detached -- so this re-renders while one is outstanding. ph_visit_waiting()
+  # bounds that: a WebM recording can never be transcribed, and one whose
+  # transcription failed stops being waited for, so neither polls on.
+  transcript_html <- function(rel_path, visit) {
+    timed <- ph_transcript_timed(cfg, rel_path, visit)
+    if (nrow(timed)) {
+      # data-t0/data-t1 are what the follow-along reads; see phrasesFor().
+      return(div(class = "ph-tx", id = sprintf("ph-tx-%d", visit),
+                 HTML(paste(sprintf(
+                   "<span class=\"ph-ph\" data-t0=\"%.3f\" data-t1=\"%.3f\">%s</span>",
+                   timed$start, timed$end, ph_escape(timed$text)),
+                   collapse = " "))))
+    }
+    # No timings: a transcript written before they existed, or a container the
+    # transcriber cannot read. The prose still reads, it just cannot highlight.
+    prose <- ph_transcript(cfg, rel_path, visit)
+    if (is.na(prose)) return(NULL)
+    if (!nzchar(trimws(prose))) {
+      return(div(class = "ph-none", "No speech in this recording."))
+    }
+    div(class = "ph-tx plain", prose)
+  }
+
   output$history <- renderUI({
     rv$tick
     r <- row_of(rv$current)
@@ -1308,7 +1394,13 @@ server <- function(input, output, session) {
     v <- ph_visits_for(cfg, r$rel_path)
     if (!length(v)) {
       return(div(class = "ph-hist text-secondary small",
-                 "No earlier visits to this photograph."))
+                 "No visits to this photograph yet."))
+    }
+    # Re-render only while a transcript is genuinely on its way. Asking here,
+    # inside the render, is what makes the polling stop by itself.
+    if (any(vapply(v, function(s) ph_visit_waiting(cfg, r$rel_path, s$visit),
+                   logical(1)))) {
+      invalidateLater(2000, session)
     }
     rows <- lapply(v, function(s) {
       url <- if (!is.na(s$audio_path)) {
@@ -1320,16 +1412,22 @@ server <- function(input, output, session) {
         s$place %||% NULL, s$event %||% NULL, s$when %||% NULL)),
         collapse = " · ")
       div(class = "v",
-          div(class = "vh", sprintf("visit %d · %s%s", s$visit,
-                                    s$started %||% "?",
-                                    if (!is.na(s$duration))
-                                      sprintf(" · %.0fs", s$duration) else "")),
-          if (!is.null(url)) tags$audio(controls = NA, preload = "none",
-                                        src = url),
-          if (nzchar(said)) div(said))
+          div(class = "vh",
+              span(sprintf("visit %d · %s%s", s$visit,
+                           s$started %||% "?",
+                           if (!is.na(s$duration))
+                             sprintf(" · %.0fs", s$duration) else "")),
+              # The id pairs a player with its text; see phrasesFor() above.
+              if (!is.null(url))
+                tags$audio(id = sprintf("ph-a-%d", s$visit), controls = NA,
+                           preload = "none", src = url)),
+          transcript_html(r$rel_path, s$visit),
+          if (nzchar(said)) div(class = "said", said))
     })
     div(class = "ph-hist",
-        tags$details(tags$summary(sprintf("%d earlier visit(s)", length(v))),
+        tags$details(open = NA,
+                     tags$summary(sprintf("%d visit(s) to this photograph",
+                                          length(v))),
                      rows))
   })
 

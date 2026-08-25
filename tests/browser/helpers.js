@@ -119,6 +119,23 @@ async function waitForVisitChunks(page, atLeast = 1) {
   );
 }
 
+// The catalogue, as rel_path -> id. Lets a spec find the tree row belonging to
+// a recording it located on disk.
+function indexIds() {
+  const f = path.join(WORK, 'index.tsv');
+  if (!fs.existsSync(f)) return {};
+  const lines = fs.readFileSync(f, 'utf8').trim().split('\n');
+  const head = lines[0].split('\t');
+  const ri = head.indexOf('rel_path');
+  const ii = head.indexOf('id');
+  const out = {};
+  for (const l of lines.slice(1)) {
+    const c = l.split('\t');
+    out[c[ri]] = parseInt(c[ii], 10);
+  }
+  return out;
+}
+
 // How many sittings this project holds.
 function sessionCount() {
   const d = path.join(WORK, 'sessions');
@@ -165,6 +182,6 @@ async function openPhoto(page, id) {
 }
 
 module.exports = { WORK, PHOTOS, sidecars, visitFiles, audioFiles, AUDIO_EXTS,
-                   pathRows, expectValidAudio, micState, waitForVisitChunks,
+                   pathRows, expectValidAudio, micState, waitForVisitChunks, indexIds,
                    photoIds, openPhoto, sessionCount, recordShortSitting,
                    bytesProduced, bytesStored };

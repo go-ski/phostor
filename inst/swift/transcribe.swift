@@ -1,8 +1,14 @@
 // phostor-transcribe -- on-device transcription of one visit's recording.
 //
 // Reads any container AVFoundation can open (MP4, Ogg, WAV, CAF, M4A), decodes
-// it to the format SpeechAnalyzer asks for, and writes plain text beside the
+// it to the format SpeechAnalyzer asks for, and writes the words beside the
 // audio. Nothing leaves the machine.
+//
+// Two files come out of one pass: `visit-NNNN.tsv`, one row per phrase with
+// the seconds it spans, and `visit-NNNN.txt`, the same words as prose. The
+// .tsv is written first, so a .txt on disk always has a .tsv beside it -- that
+// is what lets R tell a transcript made by this version from one made before
+// timings existed, and what keeps the .txt.part in-flight marker honest.
 //
 // WebM is not readable by AVFoundation, whatever its codec: those recordings
 // exit `formatUnreadable` and phostor logs it and carries on. This is why the
@@ -229,10 +235,22 @@ func transcribe(input: URL, out: URL, locale requested: Locale) async -> Exit {
 
   // Results arrive while the audio is still being fed, so they are collected
   // on their own task; the sequence ends when the analyzer finishes.
-  let collected = Task { () -> String in
-    var text = AttributedString()
-    for try await result in transcriber.results { text += result.text }
-    return String(text.characters)
+  //
+  // Each finalized result covers one phrase and carries the range of audio it
+  // came from, which is what the app highlights with. Volatile results are not
+  // requested (no .volatileResults in the preset), but isFinal is checked
+  // anyway: a partial result would otherwise be written as a phrase of its own
+  // and repeated when its final arrived.
+  let collected = Task { () -> [Phrase] in
+    var out: [Phrase] = []
+    for try await result in transcriber.results where result.isFinal {
+      let words = String(result.text.characters)
+      let range = result.range
+      out.append(Phrase(start: range.start.seconds,
+                        end: range.end.seconds,
+                        text: words))
+    }
+    return out
   }
 
   let pump = Task { () -> Int in
@@ -269,20 +287,57 @@ func transcribe(input: URL, out: URL, locale requested: Locale) async -> Exit {
     return .noAudio
   }
 
-  let text: String
+  let phrases: [Phrase]
   do {
-    text = try await collected.value
+    phrases = try await collected.value
   } catch {
     warn("\(input.lastPathComponent): \(error.localizedDescription)")
     return .failed
   }
 
-  // Written to .part and renamed, so a reader never sees a half-written file
-  // and phostor can tell "a run is in flight" from "there is a transcript".
+  // Both files are written even when there was no speech: an empty .txt and a
+  // header-only .tsv. "Transcribed and silent" has to be distinguishable from
+  // "not transcribed yet", or every silent recording is retried for ever.
+  //
+  // The .tsv goes first. See the note at the top of this file.
+  let timed = out.deletingPathExtension().appendingPathExtension("tsv")
+  let rows = ["start\tend\ttext"] + phrases.map(\.row)
+  if !writeAtomically(rows.joined(separator: "\n") + "\n", to: timed) {
+    return .write
+  }
+
+  let body = phrases.map(\.text).joined()
+    .trimmingCharacters(in: .whitespacesAndNewlines)
+  if !writeAtomically(body + "\n", to: out) { return .write }
+  return .ok
+}
+
+// One phrase of speech, and where in the recording it was said.
+struct Phrase {
+  let start: Double
+  let end: Double
+  let text: String
+
+  // A tab or a newline in the text would split the row into the wrong number
+  // of fields, so they become spaces -- the same reason phostor refuses them
+  // in a path. A non-finite time (an unset CMTime) is written as 0.
+  var row: String {
+    let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "\t", with: " ")
+      .replacingOccurrences(of: "\n", with: " ")
+      .replacingOccurrences(of: "\r", with: " ")
+    return String(format: "%.3f\t%.3f\t%@", secs(start), secs(end), t)
+  }
+
+  private func secs(_ x: Double) -> Double { x.isFinite && x > 0 ? x : 0 }
+}
+
+// Written to .part and renamed, so a reader never sees a half-written file and
+// phostor can tell "a run is in flight" from "there is a transcript".
+func writeAtomically(_ body: String, to out: URL) -> Bool {
   let part = out.appendingPathExtension("part")
-  let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
   do {
-    try (body + "\n").write(to: part, atomically: true, encoding: .utf8)
+    try body.write(to: part, atomically: true, encoding: .utf8)
     if FileManager.default.fileExists(atPath: out.path) {
       try FileManager.default.removeItem(at: out)
     }
@@ -290,9 +345,9 @@ func transcribe(input: URL, out: URL, locale requested: Locale) async -> Exit {
   } catch {
     try? FileManager.default.removeItem(at: part)
     warn("cannot write \(out.lastPathComponent): \(error.localizedDescription)")
-    return .write
+    return false
   }
-  return .ok
+  return true
 }
 
 @available(macOS 26.0, *)

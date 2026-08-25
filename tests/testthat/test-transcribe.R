@@ -1,6 +1,9 @@
 # A stand-in for the Swift helper, so the guards and the plumbing can be
-# tested on any machine. It takes the same arguments and writes the same file.
-stub_transcriber <- function(text = "a stub transcript", status = 0L) {
+# tested on any machine. It takes the same arguments and writes the same two
+# files, in the same order: the .tsv first, so a .txt on disk always has one
+# beside it.
+stub_transcriber <- function(text = "a stub transcript", status = 0L,
+                             timed = TRUE) {
   bin <- tempfile("stub-transcribe-")
   writeLines(c(
     "#!/usr/bin/env bash",
@@ -15,6 +18,13 @@ stub_transcriber <- function(text = "a stub transcript", status = 0L) {
     "done",
     sprintf("if [[ %d -ne 0 ]]; then echo 'phostor-transcribe: nope' >&2; exit %d; fi",
             status, status),
+    # timed = FALSE stands in for the previous version of the helper, which
+    # wrote prose and no timings.
+    if (timed) c(
+      'tsv="${out%.*}.tsv"',
+      "printf 'start\\tend\\ttext\\n' > \"$tsv\"",
+      sprintf("if [[ -n %s ]]; then printf '0.500\\t2.250\\t%%s\\n' %s >> \"$tsv\"; fi",
+              shQuote(text), shQuote(text))),
     sprintf("printf '%%s\\n' %s > \"$out\"", shQuote(text))), bin)
   Sys.chmod(bin, "0755")
   bin
@@ -120,7 +130,10 @@ test_that("status counts only recordings that could still be transcribed", {
   # A WebM recording is not waiting for anything.
   make_visit(p, "Trips/x.png", 1L, ext = "webm")
   expect_equal(ph_untranscribed(p$cfg), 1L)
-  writeLines("done", file.path(ph_visit_dir(p$cfg, "top.jpg"), "visit-0001.txt"))
+  # Prose and timings both, which is what the helper leaves behind.
+  d <- ph_visit_dir(p$cfg, "top.jpg")
+  writeLines("done", file.path(d, "visit-0001.txt"))
+  writeLines("start\tend\ttext", file.path(d, "visit-0001.tsv"))
   expect_equal(ph_untranscribed(p$cfg), 0L)
 })
 
@@ -176,8 +189,21 @@ test_that("the Swift helper builds and transcribes actual speech", {
   got <- ph_transcript(p$cfg, "top.jpg", 1L)
   expect_match(got, "summer", ignore.case = TRUE)
   expect_match(got, "river", ignore.case = TRUE)
-  # No half-written file is left behind.
+  # No half-written file is left behind, by either writer.
   expect_false(file.exists(file.path(dir, "visit-0001.txt.part")))
+  expect_false(file.exists(file.path(dir, "visit-0001.tsv.part")))
+
+  # The timings the panel highlights from: in order, inside the recording, and
+  # covering the words that came back as prose.
+  timed <- ph_transcript_timed(p$cfg, "top.jpg", 1L)
+  expect_gt(nrow(timed), 0L)
+  expect_true(all(timed$start >= 0))
+  expect_true(all(timed$end >= timed$start))
+  expect_false(is.unsorted(timed$start))
+  # One spoken sentence. A generous ceiling, but it is what catches the error
+  # that matters here: milliseconds, or CMTime ticks, written as seconds.
+  expect_lt(max(timed$end), 60)
+  expect_match(paste(timed$text, collapse = " "), "summer", ignore.case = TRUE)
 })
 
 test_that("the helper refuses WebM cleanly rather than producing nonsense", {
@@ -193,4 +219,153 @@ test_that("the helper refuses WebM cleanly rather than producing nonsense", {
   r <- ph_transcribe_visit(p$cfg, "top.jpg", 1L, wait = TRUE)
   expect_false(identical(r, "done"))
   expect_true(is.na(ph_transcript(p$cfg, "top.jpg", 1L)))
+})
+
+# ---------------------------------------------------------------------------
+# timed transcripts
+# ---------------------------------------------------------------------------
+
+test_that("the helper's timings are read back as phrases", {
+  p <- make_project()
+  make_visit(p)
+  testthat::local_mocked_bindings(ph_transcribe_bin = function() stub_transcriber())
+  ph_transcribe_visit(p$cfg, "top.jpg", 1L, wait = TRUE)
+
+  timed <- ph_transcript_timed(p$cfg, "top.jpg", 1L)
+  expect_equal(nrow(timed), 1L)
+  expect_equal(timed$start, 0.5)
+  expect_equal(timed$end, 2.25)
+  expect_equal(timed$text, "a stub transcript")
+  # The prose is still the prose: one file did not replace the other.
+  expect_equal(ph_transcript(p$cfg, "top.jpg", 1L), "a stub transcript")
+})
+
+test_that("a visit with no .tsv gives no phrases, not an error", {
+  p <- make_project()
+  make_visit(p)
+  testthat::local_mocked_bindings(
+    ph_transcribe_bin = function() stub_transcriber(timed = FALSE))
+  ph_transcribe_visit(p$cfg, "top.jpg", 1L, wait = TRUE)
+
+  expect_equal(nrow(ph_transcript_timed(p$cfg, "top.jpg", 1L)), 0L)
+  expect_named(ph_transcript_timed(p$cfg, "top.jpg", 1L),
+               c("start", "end", "text"))
+  # The prose is still readable, which is what the panel falls back to.
+  expect_equal(ph_transcript(p$cfg, "top.jpg", 1L), "a stub transcript")
+})
+
+test_that("a recording with no speech gives an empty transcript, not a retry", {
+  p <- make_project()
+  make_visit(p)
+  testthat::local_mocked_bindings(
+    ph_transcribe_bin = function() stub_transcriber(text = ""))
+  ph_transcribe_visit(p$cfg, "top.jpg", 1L, wait = TRUE)
+
+  dir <- ph_visit_dir(p$cfg, "top.jpg")
+  # Both files exist -- that is what stops it being transcribed again.
+  expect_true(file.exists(file.path(dir, "visit-0001.txt")))
+  expect_true(file.exists(file.path(dir, "visit-0001.tsv")))
+  expect_equal(nrow(ph_transcript_timed(p$cfg, "top.jpg", 1L)), 0L)
+  expect_equal(ph_transcribe_visit(p$cfg, "top.jpg", 1L, wait = TRUE),
+               "already transcribed")
+})
+
+test_that("speech containing a tab or an apostrophe survives the round trip", {
+  p <- make_project()
+  dir <- ph_visit_dir(p$cfg, "top.jpg", create = TRUE)
+  writeLines(c("start\tend\ttext",
+               "0.000\t1.500\tit's Kate's dog, #4 in the litter",
+               "1.500\t3.000\tand \"quoted\" words too"),
+             file.path(dir, "visit-0001.tsv"))
+
+  timed <- ph_transcript_timed(p$cfg, "top.jpg", 1L)
+  expect_equal(nrow(timed), 2L)
+  expect_equal(timed$text[1], "it's Kate's dog, #4 in the litter")
+  expect_equal(timed$text[2], "and \"quoted\" words too")
+})
+
+test_that("a malformed or empty .tsv gives no phrases", {
+  p <- make_project()
+  dir <- ph_visit_dir(p$cfg, "top.jpg", create = TRUE)
+
+  writeLines("start\tend\ttext", file.path(dir, "visit-0001.tsv"))
+  expect_equal(nrow(ph_transcript_timed(p$cfg, "top.jpg", 1L)), 0L)
+
+  writeLines(character(0), file.path(dir, "visit-0002.tsv"))
+  expect_equal(nrow(ph_transcript_timed(p$cfg, "top.jpg", 2L)), 0L)
+
+  # Rows with no usable time are dropped rather than rendered unhighlightable.
+  writeLines(c("start\tend\ttext", "-\t-\tsomething"),
+             file.path(dir, "visit-0003.tsv"))
+  expect_equal(nrow(ph_transcript_timed(p$cfg, "top.jpg", 3L)), 0L)
+
+  expect_equal(nrow(ph_transcript_timed(p$cfg, "nosuch.jpg", 1L)), 0L)
+})
+
+test_that("a transcript without timings is re-run once to gain them", {
+  p <- make_project()
+  make_visit(p)
+  dir <- ph_visit_dir(p$cfg, "top.jpg")
+  # What the previous version of the helper left behind.
+  writeLines("older prose", file.path(dir, "visit-0001.txt"))
+
+  testthat::local_mocked_bindings(ph_transcribe_bin = function() stub_transcriber())
+  expect_equal(ph_transcribe_visit(p$cfg, "top.jpg", 1L, wait = TRUE), "done")
+  expect_equal(nrow(ph_transcript_timed(p$cfg, "top.jpg", 1L)), 1L)
+  # And not a third time.
+  expect_equal(ph_transcribe_visit(p$cfg, "top.jpg", 1L, wait = TRUE),
+               "already transcribed")
+})
+
+test_that("ph_status counts a transcript that has no timings as waiting", {
+  p <- make_project()
+  make_visit(p)
+  dir <- ph_visit_dir(p$cfg, "top.jpg")
+  writeLines("older prose", file.path(dir, "visit-0001.txt"))
+  expect_equal(ph_untranscribed(p$cfg), 1L)
+
+  writeLines("start\tend\ttext", file.path(dir, "visit-0001.tsv"))
+  expect_equal(ph_untranscribed(p$cfg), 0L)
+})
+
+# ---------------------------------------------------------------------------
+# what the panel polls on
+# ---------------------------------------------------------------------------
+
+test_that("a fresh readable recording is waited on until its transcript lands", {
+  p <- make_project()
+  make_visit(p)
+  expect_true(ph_visit_waiting(p$cfg, "top.jpg", 1L))
+
+  testthat::local_mocked_bindings(ph_transcribe_bin = function() stub_transcriber())
+  ph_transcribe_visit(p$cfg, "top.jpg", 1L, wait = TRUE)
+  expect_false(ph_visit_waiting(p$cfg, "top.jpg", 1L))
+})
+
+test_that("nothing that can never be transcribed is waited on", {
+  p <- make_project()
+
+  # WebM: the transcriber cannot open it, so there is nothing to wait for.
+  make_visit(p, rel = "a.jpg", ext = "webm")
+  expect_false(ph_visit_waiting(p$cfg, "a.jpg", 1L))
+
+  # No audio at all.
+  ph_visit_dir(p$cfg, "b.jpg", create = TRUE)
+  expect_false(ph_visit_waiting(p$cfg, "b.jpg", 1L))
+
+  # Transcription switched off.
+  make_visit(p, rel = "c.jpg")
+  off <- p$cfg
+  off$transcribe <- FALSE
+  expect_false(ph_visit_waiting(off, "c.jpg", 1L))
+})
+
+test_that("a recording old enough to have failed stops being waited on", {
+  p <- make_project()
+  audio <- make_visit(p)
+  f <- file.path(ph_visit_dir(p$cfg, "top.jpg"), audio)
+  Sys.setFileTime(f, Sys.time() - 600)
+  expect_false(ph_visit_waiting(p$cfg, "top.jpg", 1L))
+  # The cut-off is a parameter, so the app can wait longer if it ever needs to.
+  expect_true(ph_visit_waiting(p$cfg, "top.jpg", 1L, within = 3600))
 })

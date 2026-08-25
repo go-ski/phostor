@@ -16,6 +16,16 @@
 # `visit-NNNN.yml`. Writing the yml would mean rewriting a file that says in
 # its own header that phostor never rewrites it, and would race the helper
 # against the sidecar write. `transcript:` in the sidecar stays reserved.
+#
+# Beside it the helper writes `visit-NNNN.tsv`: one row per phrase, with the
+# seconds of audio it spans. That is what lets the app light up the words as
+# the recording reaches them. The .txt stays the canonical prose -- a .tsv can
+# be missing (a transcript made before timings existed) and everything still
+# reads, just without the highlight.
+#
+# A visit counts as transcribed only when both files are there. The helper
+# always writes both, even for a recording with no speech in it, so the rule
+# converges: nothing is re-run twice.
 
 # Extensions worth handing to the helper. WebM is absent on purpose: it would
 # always fail, and a visit should not cost a process launch to learn that.
@@ -130,8 +140,17 @@ ph_transcribe_why <- function(cfg, dir, visit, audio, force) {
   if (!file.exists(file.path(dir, audio))) return("audio missing")
   out <- file.path(dir, paste0(ph_visit_stem(visit), ".txt"))
   if (file.exists(paste0(out, ".part"))) return("already running")
-  if (file.exists(out) && !isTRUE(force)) return("already transcribed")
+  if (ph_has_transcript(dir, visit) && !isTRUE(force)) {
+    return("already transcribed")
+  }
   NA_character_
+}
+
+# Both files, not just the prose: a .txt on its own was written before timings
+# existed and is re-run once, unforced, to gain them.
+ph_has_transcript <- function(dir, visit) {
+  stem <- file.path(dir, ph_visit_stem(visit))
+  file.exists(paste0(stem, ".txt")) && file.exists(paste0(stem, ".tsv"))
 }
 
 #' Transcribe one visit's recording.
@@ -220,6 +239,84 @@ ph_transcript <- function(config, rel_path, visit) {
   paste(readLines(path, warn = FALSE), collapse = "\n")
 }
 
+#' Read one visit's transcript as timed phrases.
+#'
+#' The rows the app highlights from. A visit transcribed before timings existed
+#' has no `.tsv`, and gives zero rows; [ph_transcript()] still reads its prose.
+#'
+#' @param config A work directory, a config path, or a config list.
+#' @param rel_path Path of the photograph relative to `photo_root`.
+#' @param visit Visit number.
+#' @return A data.frame of `start`, `end` (seconds, numeric) and `text`. Zero
+#'   rows when there is no timed transcript, and when the recording held no
+#'   speech.
+#' @examples
+#' \dontrun{
+#' ph_transcript_timed("~/phostor/family", "Trips/Skye/img_0421.jpg", 1)
+#' }
+#' @export
+ph_transcript_timed <- function(config, rel_path, visit) {
+  cfg <- ph_as_config(config)
+  empty <- data.frame(start = numeric(0), end = numeric(0),
+                      text = character(0), stringsAsFactors = FALSE)
+  path <- file.path(ph_visit_dir(cfg, rel_path),
+                    paste0(ph_visit_stem(visit), ".tsv"))
+  if (!file.exists(path)) return(empty)
+  # quote = "" and comment.char = "": an apostrophe or a # is ordinary speech,
+  # and either would otherwise swallow the rest of the row.
+  x <- tryCatch(
+    utils::read.table(path, sep = "\t", header = TRUE, quote = "",
+                      comment.char = "", stringsAsFactors = FALSE,
+                      colClasses = "character", encoding = "UTF-8",
+                      na.strings = character(0)),
+    error = function(e) NULL)
+  if (!is.data.frame(x) || !nrow(x) ||
+      !all(c("start", "end", "text") %in% names(x))) {
+    return(empty)
+  }
+  out <- data.frame(start = suppressWarnings(as.numeric(x$start)),
+                    end = suppressWarnings(as.numeric(x$end)),
+                    text = as.character(x$text),
+                    stringsAsFactors = FALSE)
+  # A row with no usable time cannot be highlighted, and one with no words has
+  # nothing to show.
+  out[!is.na(out$start) & !is.na(out$end) & nzchar(trimws(out$text)), ,
+      drop = FALSE]
+}
+
+#' Is a visit still waiting for its transcript?
+#'
+#' What the app polls on, so a panel showing a just-finished visit picks the
+#' text up when the helper writes it. False for anything that will never get
+#' one: a WebM recording, a visit with no audio, and a recording old enough
+#' that a transcriber which was going to answer would have answered by now.
+#' Without that last clause a failed transcription would be waited on for as
+#' long as its photograph was on screen.
+#'
+#' @param config A work directory, a config path, or a config list.
+#' @param rel_path Path of the photograph relative to `photo_root`.
+#' @param visit Visit number.
+#' @param within Seconds since the recording was written to keep waiting for.
+#' @return `TRUE` or `FALSE`.
+#' @examples
+#' \dontrun{
+#' ph_visit_waiting("~/phostor/family", "Trips/Skye/img_0421.jpg", 1)
+#' }
+#' @export
+ph_visit_waiting <- function(config, rel_path, visit, within = 120) {
+  cfg <- ph_as_config(config)
+  if (!isTRUE(cfg$transcribe)) return(FALSE)
+  dir <- ph_visit_dir(cfg, rel_path)
+  audio <- ph_visit_audio(dir, visit)
+  if (is.null(audio)) return(FALSE)
+  if (!tolower(tools::file_ext(audio)) %in% ph_readable_audio) return(FALSE)
+  if (ph_has_transcript(dir, visit)) return(FALSE)
+  age <- suppressWarnings(
+    as.numeric(difftime(Sys.time(), file.mtime(file.path(dir, audio)),
+                        units = "secs")))
+  isTRUE(is.finite(age) && age < within)
+}
+
 #' Transcribe every recording that has no transcript yet.
 #'
 #' Runs one at a time and waits for each, so a backfill over a large collection
@@ -267,6 +364,6 @@ ph_untranscribed <- function(cfg) {
                       pattern = "^visit-[0-9]+\\.[A-Za-z0-9]+$")
   audio <- audio[tolower(tools::file_ext(audio)) %in% ph_readable_audio]
   if (!length(audio)) return(0L)
-  txt <- sub("\\.[A-Za-z0-9]+$", ".txt", audio)
-  sum(!file.exists(txt))
+  stem <- sub("\\.[A-Za-z0-9]+$", "", audio)
+  sum(!(file.exists(paste0(stem, ".txt")) & file.exists(paste0(stem, ".tsv"))))
 }

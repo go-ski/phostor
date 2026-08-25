@@ -267,15 +267,27 @@ sitting rather than closing the tab.
 ## Transcripts
 
 When you move on to the next photograph, the one you just left is transcribed
-in the background while you talk about the next. The text is written beside the
-audio as `visit-NNNN.txt`:
+in the background while you talk about the next. The words are written beside
+the audio:
 
 ```
 sidecars/Trips/Skye/img_0421.jpg/
   visit-0001.mp4     what was said
   visit-0001.txt     what it said
+  visit-0001.tsv     and when each phrase was said
   visit-0001.yml     everything else
 ```
+
+`visit-NNNN.txt` is the prose. `visit-NNNN.tsv` is the same words with the
+seconds each phrase spans, one row per phrase:
+
+```
+start	end	text
+0.320	4.100	That is your grandmother beside the car
+4.350	7.800	the summer we drove up to Skye
+```
+
+That is what lets the app light the words up as the recording plays.
 
 Transcription runs entirely on this Mac. Nothing is uploaded, there is no
 account and no per-minute cost. It uses `SpeechAnalyzer`, which arrived in
@@ -302,6 +314,11 @@ whatever codec is inside it. Chrome and Firefox are both asked for a readable
 container first and only fall back to WebM, so this bites mainly on recordings
 made before transcription existed. They still play; they just have no text.
 
+A transcript made before timings existed has a `.txt` and no `.tsv`. It still
+reads, in the panel and through `ph_transcript()`; it just cannot follow the
+audio. The next `phostor transcribe` picks those up without `--force` and
+gives them their timings, once.
+
 To fill in everything that has none, including after changing the language:
 
 ```sh
@@ -309,8 +326,20 @@ phostor transcribe            # or ph_transcribe_all()
 phostor transcribe --force    # redo the ones already done
 ```
 
-`ph_status()` counts what is still waiting, and `ph_transcript()` reads one
-back.
+`ph_status()` counts what is still waiting. `ph_transcript()` reads the prose
+back, and `ph_transcript_timed()` the phrases with their times.
+
+### Listening back to one photograph
+
+Under the photograph on screen is every visit made to it: each recording with
+its own player, and beneath it what was said. Play one and the words light up
+as the voice reaches them; click a phrase to hear it from there. The panel
+fills itself in a few seconds after you leave a photograph, when the
+transcriber finishes with it.
+
+A recording with no timings shows its prose as one block, and one the
+transcriber could never read shows just its player. Press `s` to hide the
+whole panel for presentation.
 
 ## Read-only guarantee
 
