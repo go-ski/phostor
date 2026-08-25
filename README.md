@@ -115,7 +115,9 @@ phostor go   --work ~/phostor/family
 3. **Talk.** Recording follows the photographs on its own.
 4. **Add what was established.** Names go in as chips, with autocomplete from
    every name used earlier in the project. Place, event and a date guess are
-   three short fields. On a second visit they start filled in from last time.
+   three short fields. They belong to the photograph, not to the sitting, so
+   they can be filled in at any time -- with a sitting running or without one --
+   and are kept when you move on. Coming back to a photograph shows them again.
 5. **Pause** to stop recording, then **Resume**. **Discard this take** throws
    away the recording for the photograph on screen and starts it again.
 6. **End sitting.**
@@ -138,9 +140,11 @@ Later, pick the sitting from the dropdown and press **Play**.
       path.tsv          the order photos were viewed, appended as it happens
   sidecars/
     Trips/Skye/img_0421.jpg/    mirrors the photo directory, a folder per photo
+      tags.yml                  who, where, what and when: the photograph itself
       visit-0001.yml
       visit-0001.mp4
       visit-0001.txt            the transcript, when there is one
+      visit-0001.tsv            the same words, with the seconds each spans
       visit-0002.yml
       visit-0002.mp4
 ```
@@ -153,6 +157,42 @@ photograph in one place.
 Visit numbers are per photograph and are not reused. Deleting visit 2 of 3
 leaves the next visit as number 4, so no sidecar overwrites another.
 
+### What a photograph is of
+
+`tags.yml` holds what is currently known about the photograph:
+
+```yaml
+# phostor 0.1.0 -- tags for Trips/Skye/img_0421.jpg
+# Safe to hand-edit. Unlike a visit sidecar, phostor rewrites this file
+# whenever these fields change in the app.
+photo: Trips/Skye/img_0421.jpg
+updated: '2026-08-24T20:15:41Z'
+people:
+- Nana Vera
+- Uncle Stefan
+place: Elgol, Isle of Skye
+event: the 1974 camping trip
+when: summer 1974
+```
+
+Who is in a photograph, where it was taken, what was happening and roughly
+when are facts about the photograph. They are not facts about a recording, and
+they do not need one: the fields work whether or not a sitting is running, and
+what is typed is written when you move to the next photograph.
+
+**This is the one file phostor rewrites.** Everything else under `sidecars/` is
+written once and afterwards only added to. This file holds what is currently
+known rather than a record of one sitting, so it is replaced as that changes.
+Hand-edit it freely; just expect the app to overwrite your edit if you then
+change the same photograph's fields on screen.
+
+Kept separate from EXIF, which on a scanned print records the date of the scan.
+
+Earlier versions of phostor wrote these four fields into each visit instead,
+which meant they could only be entered during a sitting. Those older sidecars
+are still read: a photograph with no `tags.yml` falls back to its most recent
+visit, so nothing already recorded is lost, and the first edit writes the file.
+
 ### A visit
 
 ```yaml
@@ -164,21 +204,19 @@ ended: '2026-08-23T20:15:41Z'
 duration: 94.2
 audio: visit-0003.mp4
 bytes_expected: 812344
-people:
-- Nana Vera
-- Uncle Stefan
-- '? child in blue'
-place: Elgol, Isle of Skye
-event: the 1974 camping trip
-when: summer 1974
+people: []
+place: ~
+event: ~
+when: ~
 transcript: ~
 ```
 
-`people`, `place`, `event` and `when` hold what was said, kept separate from
-EXIF: on a scanned print the EXIF date is the date of the scan. `transcript`
-stays reserved and is always written as `~`: the transcript itself lives in
-`visit-NNNN.txt` beside the audio, so that filling it in never means rewriting
-a file you may have hand-edited.
+A visit records the recording. `people`, `place`, `event` and `when` are
+reserved and written empty: they describe the photograph, so they live in its
+`tags.yml`. A sidecar written by an earlier version still holds whatever it
+recorded, and is still read. `transcript` is reserved too: the transcript
+lives in `visit-NNNN.txt` beside the audio, so that filling it in never means
+rewriting a file you may have hand-edited.
 
 `bytes_expected` is how much audio the browser reported recording for the
 visit. If it exceeds the size of the recording beside it, some audio did not

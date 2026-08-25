@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
+const path = require('path');
 const H = require('./helpers');
 
 // These run in order against one phostor instance and one work directory. The
@@ -99,10 +100,17 @@ test('a sitting records visits, and a revisit gets its own sidecar', async ({ pa
   // No half-written takes remain.
   expect(H.visitFiles('.part').length).toBe(0);
 
+  // A visit records the recording. What was typed is a fact about the
+  // photograph, so it lives in its tags.yml and the sidecar reserves the keys.
   const first = fs.readFileSync(
     ymls.find((f) => f.endsWith('visit-0001.yml')), 'utf8');
-  expect(first).toContain('Elgol, Isle of Skye');
   expect(first).toContain('transcript: ~');
+  expect(first).toContain('place: ~');
+
+  const firstDir = path.dirname(ymls.find((f) => f.endsWith('visit-0001.yml')));
+  const tags = fs.readFileSync(path.join(firstDir, 'tags.yml'), 'utf8');
+  expect(tags).toContain('Elgol, Isle of Skye');
+  expect(tags).toContain('summer 1974');
 });
 
 test('the path reads in the order photographs were viewed', async () => {

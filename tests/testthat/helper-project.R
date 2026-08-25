@@ -33,10 +33,12 @@ make_photos <- function(dir = tempfile("photos-")) {
 }
 
 # An initialised project: a work directory disjoint from the photographs.
-make_project <- function(index = TRUE, render = FALSE) {
+make_project <- function(index = TRUE, render = FALSE, ...) {
   photos <- make_photos()
   work <- tempfile("work-")
-  suppressMessages(ph_init(work, photo_root = photos))
+  # `...` reaches ph_init(): a test that needs every visit kept asks for
+  # min_visit_seconds = 0, since no time passes under testServer.
+  suppressMessages(ph_init(work, photo_root = photos, ...))
   cfg <- ph_config(work)
   if (index) suppressMessages(ph_index(cfg, quiet = TRUE))
   if (render) {

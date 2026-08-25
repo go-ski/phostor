@@ -130,14 +130,14 @@ test_that("the app never writes outside the work directory", {
 
 # --- driving the real server ------------------------------------------------
 
-app_project <- function() {
+app_project <- function(...) {
   skip_on_os("windows")
   skip_if_not_installed("shiny")
   skip_if_not_installed("bslib")
   skip_if_not(have_vips(), "vips not installed")
   skip_if_not(have_vipsthumbnail(), "vipsthumbnail not installed")
   skip_if(is.null(app_file()), "app.R not reachable")
-  make_project(render = TRUE)
+  make_project(render = TRUE, ...)
 }
 
 # Points PHOSTOR_CONFIG at the project and returns the app directory, restoring
@@ -151,7 +151,9 @@ app_dir_for <- function(p) {
 }
 
 test_that("a scripted sitting records visits, revisits and the path", {
-  p <- app_project()
+  # min_visit_seconds = 0 because no time passes under testServer and this
+  # sitting records no audio: without it every visit is too brief to keep.
+  p <- app_project(min_visit_seconds = 0)
   idx <- ph_read_index(p$cfg)
   # The app opens on the first photograph in tree order, and starting a
   # sitting opens a visit for whatever is on screen. Drive from there.
@@ -167,14 +169,24 @@ test_that("a scripted sitting records visits, revisits and the path", {
     # still gets a sidecar. This is the synchronous half of the protocol.
     session$setInputs(mic_ready = list(ok = FALSE, why = "test"))
 
-    session$setInputs(people = c("Nana Vera", "Uncle Stefan"),
-                      place = "Elgol", event = "the camping trip",
-                      when = "summer 1974")
+    session$setInputs(tags_now = list(
+      rel = rel_of(a), people = list("Nana Vera", "Uncle Stefan"),
+      place = "Elgol", event = "the camping trip", when = "summer 1974"))
     session$setInputs(photo_pick = b)
-    session$setInputs(people = character(0), place = "somewhere else",
-                      event = "", when = "")
+    # The browser fills the fields and then reports what they hold and which
+    # photograph they hold it for. testServer has no browser, so the report is
+    # made here. Without one the app refuses to save, which is what stops one
+    # photograph's tags being written onto the next.
+    session$setInputs(tags_now = list(rel = rel_of(b), people = list(),
+                                      place = "", event = "", when = ""))
+    session$setInputs(tags_now = list(rel = rel_of(b), people = list(),
+                                      place = "somewhere else", event = "",
+                                      when = ""))
     session$setInputs(photo_pick = a)     # a revisit
-    session$setInputs(place = "Elgol, again")
+    session$setInputs(tags_now = list(
+      rel = rel_of(a), people = list("Nana Vera", "Uncle Stefan"),
+      place = "Elgol, again", event = "the camping trip",
+      when = "summer 1974"))
     session$setInputs(stop_sitting = 1)
   })
 
@@ -186,11 +198,21 @@ test_that("a scripted sitting records visits, revisits and the path", {
   expect_equal(ph_visit_counts(p$cfg, rel_of(b)), 1L)
   v1 <- ph_visits_for(p$cfg, rel_of(a))
   expect_equal(vapply(v1, function(x) x$visit, integer(1)), 1:2)
-  expect_equal(v1[[1]]$people, c("Nana Vera", "Uncle Stefan"))
-  expect_equal(v1[[1]]$place, "Elgol")
-  expect_equal(v1[[1]]$when, "summer 1974")
-  # The revisit is a separate record; the first is unchanged.
-  expect_equal(v1[[2]]$place, "Elgol, again")
+  # A visit records the recording. What was typed belongs to the photograph,
+  # so the sidecar reserves those keys and leaves them empty.
+  expect_null(v1[[1]]$place)
+  expect_equal(v1[[1]]$people, character(0))
+
+  # 2b. What was typed is on the photographs, and the revisit's correction won
+  # without disturbing the fields it did not touch.
+  expect_equal(ph_tags(p$cfg, rel_of(a))$place, "Elgol, again")
+  expect_equal(ph_tags(p$cfg, rel_of(a))$people,
+               c("Nana Vera", "Uncle Stefan"))
+  expect_equal(ph_tags(p$cfg, rel_of(a))$when, "summer 1974")
+  expect_equal(ph_tags(p$cfg, rel_of(b))$place, "somewhere else")
+  expect_equal(ph_tags(p$cfg, rel_of(b))$people, character(0))
+  expect_equal(ph_tags(p$cfg, rel_of(b))$place, "somewhere else")
+  expect_equal(ph_tags(p$cfg, rel_of(b))$people, character(0))
 
   # 3. The path records the route, and ends after the last visit is written.
   sess <- ph_sessions(p$cfg)
@@ -282,7 +304,7 @@ test_that("a visit too brief to hold a conversation leaves only a path row", {
   expect_true("leave" %in% path$event)
 })
 
-test_that("something typed is kept however brief the visit", {
+test_that("something typed is kept, and does not manufacture a visit", {
   p <- app_project()
   idx <- ph_read_index(p$cfg)
   rel <- idx$rel_path[1]
@@ -290,27 +312,69 @@ test_that("something typed is kept however brief the visit", {
     session$setInputs(photo_pick = idx$id[1])
     session$setInputs(start = 1)
     session$setInputs(mic_ready = list(ok = FALSE, why = "test"))
-    session$setInputs(people = "Ada")
+    session$setInputs(tags_now = list(rel = rel, people = list("Ada"),
+                                      place = "", event = "", when = ""))
     session$setInputs(photo_pick = idx$id[2])
     session$setInputs(stop_sitting = 1)
   })
-  expect_equal(ph_visit_counts(p$cfg, rel), 1L)
-  expect_equal(ph_visits_for(p$cfg, rel)[[1]]$people, "Ada")
+  expect_equal(ph_tags(p$cfg, rel)$people, "Ada")
+  # The visit was too brief and recorded nothing, so there is no visit to
+  # write. Typing a name is not a recording.
+  expect_equal(ph_visit_counts(p$cfg, rel), 0L)
+})
+
+test_that("tags are kept with no sitting running at all", {
+  p <- app_project()
+  idx <- ph_read_index(p$cfg)
+  rel <- idx$rel_path[1]
+  shiny::testServer(app_dir_for(p), {
+    # No start = 1: the fields must work on their own.
+    session$setInputs(photo_pick = idx$id[1])
+    session$setInputs(tags_now = list(rel = rel, people = list("Vera"),
+                                      place = "Elgol", event = "", when = ""))
+    session$setInputs(photo_pick = idx$id[2])
+  })
+  expect_equal(ph_tags(p$cfg, rel)$place, "Elgol")
+  expect_equal(ph_tags(p$cfg, rel)$people, "Vera")
+  expect_equal(ph_visit_counts(p$cfg, rel), 0L)
+  expect_equal(nrow(ph_sessions(p$cfg)), 0L)
+})
+
+test_that("paging past a photograph leaves nothing behind on it", {
+  p <- app_project()
+  idx <- ph_read_index(p$cfg)
+  ord <- ph_tree_order(idx)
+  shiny::testServer(app_dir_for(p), {
+    for (id in ord) session$setInputs(photo_pick = id)
+  })
+  expect_equal(length(list.files(p$cfg$sidecar_dir, recursive = TRUE)), 0L)
 })
 
 test_that("a closed browser still writes the visit in progress", {
-  p <- app_project()
+  p <- app_project(min_visit_seconds = 0)
   idx <- ph_read_index(p$cfg)
   rel <- idx$rel_path[1]
   shiny::testServer(app_dir_for(p), {
     session$setInputs(photo_pick = idx$id[1])
     session$setInputs(start = 1)
     session$setInputs(mic_ready = list(ok = FALSE, why = "test"))
-    session$setInputs(place = "half-said")
     # No stop_sitting, no navigation: the tab simply closes.
   })
   expect_equal(ph_visit_counts(p$cfg, rel), 1L)
-  expect_equal(ph_visits_for(p$cfg, rel)[[1]]$place, "half-said")
+})
+
+test_that("a closed browser keeps what was typed but not yet left", {
+  p <- app_project()
+  idx <- ph_read_index(p$cfg)
+  rel <- idx$rel_path[1]
+  shiny::testServer(app_dir_for(p), {
+    session$setInputs(photo_pick = idx$id[1])
+    session$setInputs(tags_now = list(rel = rel, people = list(),
+                                      place = "half-said", event = "",
+                                      when = ""))
+    # Nothing was navigated away from, so only the session ending can save it.
+  })
+  expect_equal(ph_tags(p$cfg, rel)$place, "half-said")
 })
 
 test_that("the path reads in the order photographs were viewed", {
@@ -626,4 +690,31 @@ test_that("a chunk that cannot be written is reported, not left to retry", {
     expect_null(rv$session_dir)
     expect_length(rv$pending, 0L)
   })
+})
+
+test_that("one photograph's tags are not written onto the next", {
+  # Reachable by holding an arrow key down: the fields are filled through the
+  # browser, so for a moment after moving on they still show the previous
+  # photograph's text. Leaving again in that window must write nothing.
+  p <- app_project()
+  idx <- ph_read_index(p$cfg)
+  ord <- ph_tree_order(idx)
+  rel_of <- function(id) idx$rel_path[match(id, idx$id)]
+  a <- ord[1]; b <- ord[2]; c <- ord[3]
+
+  shiny::testServer(app_dir_for(p), {
+    session$setInputs(photo_pick = a)
+    session$setInputs(tags_now = list(rel = rel_of(a), people = list(),
+                                      place = "Camasunary", event = "",
+                                      when = ""))
+    session$setInputs(photo_pick = b)
+    # The browser has not reported back for b, so the fields still read
+    # "Camasunary" while the photograph on screen is b. Leaving again in that
+    # window must write nothing.
+    session$setInputs(photo_pick = c)
+  })
+
+  expect_equal(ph_tags(p$cfg, rel_of(a))$place, "Camasunary")
+  expect_equal(ph_tags(p$cfg, rel_of(b))$place, "")
+  expect_false(file.exists(file.path(ph_visit_dir(p$cfg, rel_of(b)), "tags.yml")))
 })

@@ -152,7 +152,7 @@ ph_js <- "
     stream:null, rec:null, key:null, mime:null,
     q:[], sending:false, seq:0, pending:{}, closing:{},
     order:[], current:null, chunkMs:5000,
-    play:null, playIdx:0, audio:null,
+    play:null, playIdx:0, audio:null, tagsFor:null, tagsWant:null,
     deviceId:null, sitting:false, checkOwnsStream:false, ac:null, meter:null,
     visitKey:'', ackedBy:{}, bytesBy:{}, stopped:{}, dropped:{},
     closeTimer:{}
@@ -578,6 +578,60 @@ ph_js <- "
     }
   }
 
+  // ---- tag fields --------------------------------------------------------
+  function tagValues(){
+    var sel = el('people');
+    var people = (sel && sel.selectize) ? sel.selectize.getValue() : [];
+    if (typeof people === 'string') people = people ? people.split(',') : [];
+    var val = function(id){ var e = el(id); return e ? e.value : ''; };
+    return {people: people, place: val('place'), event: val('event'),
+            when: val('when')};
+  }
+  // Which photograph the fields are showing. Set only once they demonstrably
+  // hold that photograph's text: the server sends the values it seeded, and
+  // this compares them against the fields. Nothing about the order or timing
+  // of the messages is assumed -- the custom message carrying the stamp and
+  // the input messages carrying the text do not even arrive together.
+  function tagsMatch(want){
+    var v = tagValues();
+    if (v.place !== want.place || v.event !== want.event ||
+        v.when !== want.when) return false;
+    var w = want.people || [];
+    if (v.people.length !== w.length) return false;
+    for (var i = 0; i < w.length; i++) {
+      if (v.people[i] !== w[i]) return false;
+    }
+    return true;
+  }
+  function checkSeeded(){
+    if (PH.tagsWant && tagsMatch(PH.tagsWant)) {
+      PH.tagsFor = PH.tagsWant.rel;
+      PH.tagsWant = null;
+    }
+  }
+  // Only ever sent from a real user event, and only once the fields are known
+  // to belong to a photograph. Filling them from the server fires the same
+  // events field by field, and a report made partway through would pair one
+  // photograph's stamp with another's half-replaced text.
+  function reportTags(){
+    if (!PH.tagsFor) return;
+    var v = tagValues();
+    v.rel = PH.tagsFor;
+    send('tags_now', v);
+  }
+  // Delegated: the fields are re-rendered, and selectize replaces its own
+  // element, so handlers bound to them would not survive.
+  document.addEventListener('input', function(e){
+    var id = e.target && e.target.id;
+    if (id === 'place' || id === 'event' || id === 'when') reportTags();
+  });
+  // people is a selectize, which announces itself with jQuery's trigger();
+  // a native listener does not reliably see that. Registered on connect,
+  // where jQuery is certainly loaded.
+  $(document).on('shiny:connected', function(){
+    $(document).on('change', '#people', reportTags);
+  });
+
   // ---- transcript follow-along -------------------------------------------
   // Two delegated listeners for every visit on screen, rather than a pair per
   // <audio>: the panel is re-rendered whenever the photograph changes, and
@@ -741,6 +795,27 @@ ph_js <- "
       if (!PH.play) return;
       playAt(Math.min(PH.play.length - 1, Math.max(0, PH.playIdx + m.by)));
     });
+    // The tag fields are filled by the server, which takes a round trip, and
+    // Shiny debounces text inputs on the way back. So input$place can still
+    // hold the previous photograph's text when a move to the next one
+    // arrives, and saving it there would write one photograph's tags onto
+    // another -- reachable just by holding an arrow key down.
+    //
+    // The client reports the fields itself instead: what they hold, and which
+    // photograph they hold it for, in one value that cannot be half stale.
+    // What the server has just put into the fields, and for which photograph.
+    // Until they actually hold it, the fields belong to no photograph and
+    // nothing about them is reported.
+    Shiny.addCustomMessageHandler('ph_tags_seeded', function(m){
+      PH.tagsWant = m;
+      PH.tagsFor = null;
+      checkSeeded();
+    });
+    // Fired as each update reaches its input; the value lands just after, so
+    // the check is deferred past it.
+    $(document).on('shiny:updateinput', function(){
+      setTimeout(checkSeeded, 0);
+    });
     Shiny.addCustomMessageHandler('ph_present', function(m){
       document.body.classList.toggle('ph-present', !!m.on);
     });
@@ -849,6 +924,8 @@ server <- function(input, output, session) {
     reserved = list(),       # rel_path -> highest visit number handed out
     ending = FALSE,          # End sitting pressed, waiting for visits to drain
     tick = 0L,
+    tags_for = NULL,         # photograph the tag fields currently hold
+    tags_seeded = NULL,      # what was put in them, to tell an edit from that
     playing = FALSE,
     present = FALSE
   )
@@ -915,25 +992,62 @@ server <- function(input, output, session) {
     invisible(NULL)
   }
 
-  # A second visit starts from the previous visit's values rather than blank.
-  # Nothing is overwritten: this seeds the form, and the new visit writes its
-  # own sidecar.
+  # The fields show what is known about the photograph on screen, with or
+  # without a sitting. rv$tags_for and rv$tags_seeded record which photograph
+  # they belong to and what was put in them, so save_tags() can tell an edit
+  # from the seeding itself and write only when something actually changed.
   seed_fields <- function(rel_path) {
-    last <- ph_last_visit(cfg, rel_path)
+    t <- ph_tags(cfg, rel_path)
     known <- ph_known_people(cfg)
-    sel <- if (is.null(last)) character(0) else last$people
+    rv$tags_for <- rel_path
+    rv$tags_seeded <- t
     updateSelectizeInput(session, "people",
-                         choices = sort(unique(c(known, sel))),
-                         selected = sel, server = FALSE)
-    updateTextInput(session, "place", value = as.character(last$place %||% ""))
-    updateTextInput(session, "event", value = as.character(last$event %||% ""))
-    updateTextInput(session, "when", value = as.character(last$when %||% ""))
+                         choices = sort(unique(c(known, t$people))),
+                         selected = t$people, server = FALSE)
+    updateTextInput(session, "place", value = t$place)
+    updateTextInput(session, "event", value = t$event)
+    updateTextInput(session, "when", value = t$when)
+    # The values as well as the photograph: the client watches for the fields
+    # to actually hold these before it will report anything about them, which
+    # is what stops one photograph's tags reaching another. See save_tags().
+    tell("ph_tags_seeded", list(rel = rel_path, people = as.list(t$people),
+                                place = t$place, event = t$event,
+                                when = t$when))
+  }
+
+  # Read the fields and write them to the photograph they belong to. Called
+  # while that photograph is still the one on screen -- before show_photo()
+  # reseeds -- so the values are read synchronously and cannot be confused with
+  # the next photograph's.
+  # updateTextInput() round-trips through the browser, so for a moment after a
+  # photograph is shown the fields still hold the previous one's text. This
+  # says the browser has confirmed the seeding. Without it, paging quickly away
+  # from a tagged photograph writes its tags onto the next one.
+  save_tags <- function() {
+    rel <- rv$tags_for
+    if (is.null(rel)) return(invisible(NULL))
+    # What the client says its fields hold, and which photograph they hold it
+    # for. Read from `input$place` instead, this would write one photograph's
+    # tags onto another: Shiny debounces text inputs, so the server's copy can
+    # still be the previous photograph's when the move arrives. See the note
+    # by ph_tags_seeded above.
+    now <- input$tags_now
+    if (is.null(now) || !identical(as.character(now$rel %||% ""), rel)) {
+      return(invisible(NULL))
+    }
+    t <- ph_tags_clean(now)
+    if (identical(t, rv$tags_seeded)) return(invisible(NULL))
+    ph_write_tags(cfg, rel, t)
+    rv$tags_seeded <- t
+    rv$tick <- rv$tick + 1L
+    invisible(NULL)
   }
 
   observeEvent(input$photo_pick, {
     id <- as.integer(input$photo_pick)
     if (isTRUE(rv$playing)) stop_play(finished = FALSE)
     if (identical(id, rv$current)) return()
+    save_tags()
     close_visit()
     show_photo(id)
     open_visit()
@@ -1032,6 +1146,9 @@ server <- function(input, output, session) {
 
   observeEvent(input$stop_sitting, {
     rv$ending <- TRUE
+    # A natural checkpoint: the photograph stays on screen, so nothing forces
+    # its tags to disk until the next navigation without this.
+    save_tags()
     close_visit()
     finish_sitting()
   })
@@ -1122,10 +1239,6 @@ server <- function(input, output, session) {
     v <- rv$visit
     if (is.null(v)) return(invisible(NULL))
     v$ended <- Sys.time()
-    v$fields <- list(people = input$people %||% character(0),
-                     place = input$place %||% "",
-                     event = input$event %||% "",
-                     when = input$when %||% "")
     # The `leave` row is written here, while this photograph is the one being
     # left, so path.tsv reads in view order. Written at finalize_visit() time
     # instead -- which an audio visit reaches only after the browser flushes
@@ -1181,14 +1294,11 @@ server <- function(input, output, session) {
     }
     dur <- v$duration %||% as.numeric(difftime(v$ended %||% Sys.time(),
                                                v$started, units = "secs"))
-    f <- v$fields %||% list()
-    said <- length(f$people) > 0 || any(nzchar(c(f$place %||% "",
-                                                 f$event %||% "",
-                                                 f$when %||% "")))
-    # A visit shorter than min_visit_seconds, with nothing typed and no audio,
-    # leaves a path row and nothing else, so paging through photographs does
-    # not write a record for each one.
-    keep <- !is.na(audio) || said || dur >= cfg$min_visit_seconds
+    # A visit shorter than min_visit_seconds with no audio leaves a path row
+    # and nothing else, so paging through photographs does not write a record
+    # for each one. What was typed is not part of this test any more: it
+    # belongs to the photograph and was written to its tags.yml.
+    keep <- !is.na(audio) || dur >= cfg$min_visit_seconds
     if (keep) {
       ph_write_sidecar(cfg, v$rel_path, v$visit, list(
         session = basename(v$session_dir %||% ""),
@@ -1198,8 +1308,7 @@ server <- function(input, output, session) {
                        "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
         duration = dur,
         audio = audio,
-        bytes_expected = if (is.na(expected)) NA else expected,
-        people = f$people, place = f$place, event = f$event, when = f$when))
+        bytes_expected = if (is.na(expected)) NA else expected))
     }
     if (keep) {
       tell("ph_badge", list(id = v$id,
@@ -1470,6 +1579,9 @@ server <- function(input, output, session) {
   # its audio is renamed and its sidecar written.
   session$onSessionEnded(function() {
     isolate({
+      # A closed tab must not lose what was typed about the photograph on
+      # screen; unlike the recording, it needs nothing from the browser.
+      save_tags()
       # Not close_visit(): that asks the browser to flush its recorder, and
       # there is no browser left to ask. Use what already reached disk and
       # write the sidecar from that.

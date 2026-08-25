@@ -181,8 +181,11 @@ ph_visits_for <- function(cfg, rel_path) {
 
 #' Every name used anywhere in this project, for autocomplete.
 #'
-#' Reads the `people` field of every sidecar. At a few hundred photographs this
-#' is fast enough to call whenever the app needs it.
+#' Reads the `people` field of every `tags.yml` and every visit sidecar. Both,
+#' because a name typed outside a sitting only ever reaches `tags.yml`, and a
+#' name from before tags had their own file only ever reached a sidecar. At a
+#' few hundred photographs this is fast enough to call whenever the app needs
+#' it.
 #'
 #' @param config A work directory, a config path, or a config list.
 #' @return A sorted character vector of unique names.
@@ -196,9 +199,16 @@ ph_known_people <- function(config = NULL) {
   if (!dir.exists(cfg$sidecar_dir)) return(character(0))
   files <- list.files(cfg$sidecar_dir, pattern = "^visit-[0-9]+\\.yml$",
                       recursive = TRUE, full.names = TRUE)
-  if (!length(files)) return(character(0))
   nm <- unlist(lapply(files, function(f) ph_read_sidecar(f)$people),
                use.names = FALSE)
+
+  tags <- list.files(cfg$sidecar_dir, pattern = "^tags\\.yml$",
+                     recursive = TRUE, full.names = TRUE)
+  nm <- c(nm, unlist(lapply(tags, function(f) {
+    x <- tryCatch(yaml::read_yaml(f), error = function(e) NULL)
+    if (is.list(x)) ph_tags_clean(x)$people else character(0)
+  }), use.names = FALSE))
+
   nm <- trimws(as.character(nm))
   sort(unique(nm[nzchar(nm)]))
 }
