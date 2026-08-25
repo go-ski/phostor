@@ -43,6 +43,18 @@ min_visit_seconds: 2
 # round trips.
 chunk_seconds: 5
 
+# Transcribe each recording once you move on to the next photograph. The
+# transcript is written beside the audio as visit-NNNN.txt. Transcription runs
+# entirely on this Mac -- nothing is uploaded -- and needs macOS 26 or newer
+# and Xcode's command line tools. Without those, recording is unaffected and
+# no transcript is written.
+transcribe: true
+
+# Language to transcribe in, as a BCP-47 tag: en-US, en-GB, de-DE. Leave empty
+# to use whatever this Mac is set to. `phostor preflight` lists the languages
+# installed.
+transcribe_locale: 
+
 # ---------------------------------------------------------------------------
 # Which files count as photographs.
 # ---------------------------------------------------------------------------

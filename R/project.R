@@ -343,6 +343,14 @@ ph_validate <- function(cfg) {
   # 0 keeps every visit, however brief.
   cfg$min_visit_seconds <- num("min_visit_seconds", 0L, 3600L)
   cfg$chunk_seconds     <- num("chunk_seconds", 1L, 60L)
+  flag <- suppressWarnings(as.logical(cfg$transcribe)[1])
+  if (is.na(flag)) {
+    err <- c(err, sprintf("transcribe must be true or false, got '%s'",
+                          paste(cfg$transcribe, collapse = " ")))
+  }
+  cfg$transcribe <- flag
+  cfg$transcribe_locale <- as.character(cfg$transcribe_locale %||% "")[1]
+  if (is.na(cfg$transcribe_locale)) cfg$transcribe_locale <- ""
   if (!length(cfg$extensions)) err <- c(err, "extensions is empty")
   if (!length(cfg$title) || !nzchar(as.character(cfg$title)[1])) {
     err <- c(err, "title is empty")

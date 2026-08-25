@@ -40,23 +40,50 @@ function pathRows() {
   });
 }
 
-// A WebM file begins with the EBML magic 1A 45 DF A3. With no ffmpeg
-// available, the header is how the tests check that the chunks the browser
-// sent concatenated into a valid container.
-function expectValidWebm(file, minBytes = 512) {
+// Which container a browser recorded in: Chrome MP4, Firefox Ogg, either one
+// WebM if nothing better was on offer. Specs assert on whatever is there
+// rather than naming a format, so the same spec covers every browser.
+const AUDIO_EXTS = ['.mp4', '.ogg', '.webm'];
+
+// Every visit recording, whatever container it landed in.
+function audioFiles() {
+  return AUDIO_EXTS.flatMap((e) => visitFiles(e)).sort();
+}
+
+// With no ffmpeg available, the header is how the tests check that the chunks
+// the browser sent concatenated into a valid container. Each format is
+// checked for its own magic plus a marker that a stream really follows, so a
+// bare container header cannot pass.
+function expectValidAudio(file, minBytes = 512) {
   const buf = fs.readFileSync(file);
-  expect(buf.length, `${path.basename(file)} is too small`).toBeGreaterThan(minBytes);
-  expect(
-    Array.from(buf.subarray(0, 4)),
-    `${path.basename(file)} does not start with the EBML magic`
-  ).toEqual([0x1a, 0x45, 0xdf, 0xa3]);
-  // The Opus identification header sits in the track's CodecPrivate. Finding
-  // it shows the concatenated chunks carry an Opus stream, not just a
-  // container header, and needs no ffmpeg.
-  expect(
-    buf.includes(Buffer.from('OpusHead')),
-    `${path.basename(file)} carries no Opus stream`
-  ).toBe(true);
+  const name = path.basename(file);
+  expect(buf.length, `${name} is too small`).toBeGreaterThan(minBytes);
+
+  if (file.endsWith('.webm')) {
+    // EBML magic, then the Opus identification header in CodecPrivate.
+    expect(Array.from(buf.subarray(0, 4)),
+           `${name} does not start with the EBML magic`)
+      .toEqual([0x1a, 0x45, 0xdf, 0xa3]);
+    expect(buf.includes(Buffer.from('OpusHead')),
+           `${name} carries no Opus stream`).toBe(true);
+  } else if (file.endsWith('.ogg')) {
+    // Every Ogg page starts with 'OggS'; the first carries OpusHead. A second
+    // page proves the later chunks appended as pages rather than as rubbish.
+    expect(buf.subarray(0, 4).toString('latin1'),
+           `${name} does not start with an Ogg page`).toBe('OggS');
+    expect(buf.includes(Buffer.from('OpusHead')),
+           `${name} carries no Opus stream`).toBe(true);
+    expect(buf.indexOf(Buffer.from('OggS'), 4),
+           `${name} has only one Ogg page`).toBeGreaterThan(0);
+  } else {
+    // 'ftyp' at offset 4 opens the init segment. 'moof' is a media fragment:
+    // finding one proves a chunk after the init segment concatenated on, which
+    // is the property the whole recording scheme rests on.
+    expect(buf.subarray(4, 8).toString('latin1'),
+           `${name} has no ftyp box`).toBe('ftyp');
+    expect(buf.includes(Buffer.from('moof')),
+           `${name} carries no media fragment`).toBe(true);
+  }
 }
 
 // Total bytes MediaRecorder produced, summed over every visit this page has
@@ -70,7 +97,7 @@ async function bytesProduced(page) {
 
 // Total size of every visit audio file the project holds.
 function bytesStored() {
-  return visitFiles('.webm').reduce((a, f) => a + fs.statSync(f).size, 0);
+  return audioFiles().reduce((a, f) => a + fs.statSync(f).size, 0);
 }
 
 // Wait for the mic to reach a state, using the app's DOM hooks rather than a
@@ -137,7 +164,7 @@ async function openPhoto(page, id) {
   );
 }
 
-module.exports = { WORK, PHOTOS, sidecars, visitFiles, pathRows,
-                   expectValidWebm, micState, waitForVisitChunks, photoIds,
-                   openPhoto, sessionCount, recordShortSitting,
+module.exports = { WORK, PHOTOS, sidecars, visitFiles, audioFiles, AUDIO_EXTS,
+                   pathRows, expectValidAudio, micState, waitForVisitChunks,
+                   photoIds, openPhoto, sessionCount, recordShortSitting,
                    bytesProduced, bytesStored };

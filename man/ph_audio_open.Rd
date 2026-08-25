@@ -13,7 +13,9 @@ ph_audio_open(cfg, rel_path, visit, ext = "webm")
 
 \item{visit}{Visit number.}
 
-\item{ext}{Container extension, without the dot.}
+\item{ext}{Container extension, without the dot. Normally derived from what
+the browser reported it is recording, with \code{\link[=ph_audio_ext]{ph_audio_ext()}}; the default
+is the container every browser falls back to.}
 }
 \value{
 The \code{.part} path to append to.

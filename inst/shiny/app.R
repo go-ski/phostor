@@ -267,19 +267,28 @@ ph_js <- "
   function setText(id, t){ var e = el(id); if (e) e.textContent = t; }
 
   // ---- recorder ----------------------------------------------------------
+  // Order matters, and not for quality. AVFoundation -- which is what
+  // transcription reads with -- opens MP4 and Ogg and cannot open WebM,
+  // whatever codec is inside it. So the first three entries get a transcript
+  // and the last two only get audio.
+  //
+  // AAC before plain 'audio/mp4' because Chrome answers the latter with Opus
+  // in an MP4, which Firefox will not play back; both transcribe equally well.
+  // Chunks concatenate for all five: each is a single MediaRecorder's output,
+  // and MP4's init segment is followed by self-contained fragments.
+  var PH_MIMES = ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4',
+                  'audio/ogg;codecs=opus',
+                  'audio/webm;codecs=opus', 'audio/webm'];
   function pickMime(){
     if (typeof MediaRecorder === 'undefined') return null;
-    var want = ['audio/webm;codecs=opus', 'audio/webm'];
-    for (var i=0;i<want.length;i++){
-      if (MediaRecorder.isTypeSupported(want[i])) return want[i];
+    for (var i=0;i<PH_MIMES.length;i++){
+      if (MediaRecorder.isTypeSupported(PH_MIMES[i])) return PH_MIMES[i];
     }
     return null;
   }
   function mimeList(){
-    var all = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus',
-               'audio/mp4'];
     if (typeof MediaRecorder === 'undefined') return [];
-    return all.filter(function(m){ return MediaRecorder.isTypeSupported(m); });
+    return PH_MIMES.filter(function(m){ return MediaRecorder.isTypeSupported(m); });
   }
 
   // ---- microphone --------------------------------------------------------
@@ -767,6 +776,8 @@ server <- function(input, output, session) {
     paused = FALSE,          # Pause pressed, as against arming having failed
     pausing = FALSE,         # Pause pressed, waiting for the visit to drain
     closed = list(),         # finalized visit key -> its final audio path
+    closedvisit = list(),    # finalized visit key -> photo, number, audio name
+    ext = NULL,              # container the browser records in
     dropped = list(),        # discarded visit key -> TRUE
     lastseq = list(),        # visit key -> highest chunk seq already written
     expected = list(),       # visit key -> bytes the browser said it recorded
@@ -944,6 +955,9 @@ server <- function(input, output, session) {
   observeEvent(input$mic_ready, {
     ok <- isTRUE(input$mic_ready$ok)
     rv$armed <- ok
+    # The recorder picks its own container from what the browser supports; the
+    # extension has to follow it or the file is misnamed and unreadable.
+    if (ok) rv$ext <- ph_audio_ext(input$mic_ready$mime)
     rv$mic_msg <- if (ok) NULL else {
       ph_mic_advice(as.character(input$mic_ready$why %||% ""), rv$browser)
     }
@@ -1032,7 +1046,9 @@ server <- function(input, output, session) {
     held <- as.integer(rv$reserved[[r$rel_path]] %||% 0L)
     n <- max(ph_next_visit(cfg, r$rel_path), held + 1L)
     rv$reserved[[r$rel_path]] <- n
-    part <- if (isTRUE(rv$armed)) ph_audio_open(cfg, r$rel_path, n) else NULL
+    part <- if (isTRUE(rv$armed)) {
+      ph_audio_open(cfg, r$rel_path, n, ext = rv$ext %||% "webm")
+    } else NULL
     rv$visit <- list(key = key, id = as.integer(rv$current),
                      rel_path = r$rel_path, visit = n, session_dir = rv$session_dir,
                      started = Sys.time(), part = part)
@@ -1088,7 +1104,11 @@ server <- function(input, output, session) {
     } else NULL
     # Remember where this visit's audio ended up, so a chunk still in flight
     # is appended rather than dropped.
-    if (!is.null(final)) rv$closed[[key]] <- final
+    if (!is.null(final)) {
+      rv$closed[[key]] <- final
+      rv$closedvisit[[key]] <- list(rel_path = v$rel_path, visit = v$visit,
+                                    audio = audio)
+    }
 
     # What the browser said it recorded, against what reached the file. A
     # sitting cannot be repeated, so a shortfall is worth saying out loud.
@@ -1126,6 +1146,11 @@ server <- function(input, output, session) {
       tell("ph_badge", list(id = v$id,
                             n = ph_visit_counts(cfg, v$rel_path)))
     }
+    # The recording is complete and renamed, so the photograph just left can be
+    # transcribed while the next one is on screen. Started in the background:
+    # waiting here would freeze the app mid-sitting.
+    if (!is.na(audio)) ph_transcribe_visit(cfg, v$rel_path, v$visit, audio = audio)
+
     rv$tick <- rv$tick + 1L
     finish_pause()
     finish_sitting()
@@ -1194,6 +1219,12 @@ server <- function(input, output, session) {
         exp <- rv$expected[[key]]
         if (!is.null(exp) && file.exists(target) && file.size(target) >= exp) {
           rv$warnings[[key]] <- NULL
+        }
+        # The audio just got longer than whatever was transcribed from it.
+        cv <- rv$closedvisit[[key]]
+        if (!is.null(cv)) {
+          ph_transcribe_visit(cfg, cv$rel_path, cv$visit, audio = cv$audio,
+                              force = TRUE)
         }
       } else {
         rv$warnings[[key]] <- sprintf("%s could not be written: %s",

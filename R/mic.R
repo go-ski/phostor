@@ -12,8 +12,8 @@
 
 # Every error name phostor explains. `insecure`, `nocodec` and `norecorder`
 # are phostor's own, sent by app.R when there is no getUserMedia, when
-# MediaRecorder cannot produce WebM/Opus, and when a recorder that a visit
-# needs did not start.
+# MediaRecorder can produce none of the containers phostor records in, and when
+# a recorder that a visit needs did not start.
 ph_mic_errors <- c(
   "NotFoundError", "DevicesNotFoundError", "OverconstrainedError",
   "NotAllowedError", "PermissionDeniedError",
@@ -21,8 +21,10 @@ ph_mic_errors <- c(
   "SecurityError", "TypeError", "insecure", "nocodec", "norecorder"
 )
 
-# Browsers whose MediaRecorder produces WebM/Opus, whose chunks concatenate
-# into a valid file. Safari records fragmented MP4, which does not.
+# Browsers whose MediaRecorder produces a container phostor can assemble from
+# chunks: Chrome records MP4, Firefox Ogg, and both fall back to WebM. Safari
+# is absent because its fragmented MP4 chunks do not concatenate -- Chrome's
+# do, which is why MP4 is preferred there and gets a transcript.
 ph_browsers_supported <- c("Chrome", "Firefox", "Microsoft Edge", "Brave",
                            "Opera", "Chromium")
 

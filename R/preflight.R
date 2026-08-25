@@ -70,7 +70,7 @@ ph_preflight <- function(quiet = FALSE) {
   for (nm in names(have)) {
     ph_pf_line(if (isTRUE(ph_browser_records(nm))) "ok" else "warn", nm,
                if (isTRUE(ph_browser_records(nm))) have[[nm]]
-               else paste0(have[[nm]], "  (cannot record: no WebM/Opus)"),
+               else paste0(have[[nm]], "  (cannot record: chunks do not concatenate)"),
                quiet = quiet)
   }
   if (!length(have)) {
@@ -92,6 +92,35 @@ ph_preflight <- function(quiet = FALSE) {
                       ph_browser_launcher()$name %||% "another browser",
                       " instead)"), quiet = quiet)
   }
+  # Transcription is optional: without it phostor records exactly as before,
+  # so a missing transcriber is a warning and never makes preflight fail.
+  if (!quiet) message("== transcription ==")
+  if (!identical(Sys.info()[["sysname"]], "Darwin")) {
+    ph_pf_line("warn", "transcriber", "macOS only; recordings are kept untranscribed",
+               quiet = quiet)
+  } else if (!nzchar(Sys.which("swiftc"))) {
+    ph_pf_line("warn", "transcriber",
+               "install Xcode command line tools (xcode-select --install)",
+               quiet = quiet)
+  } else {
+    bin <- ph_transcribe_build(quiet = TRUE)
+    if (is.na(bin)) {
+      ph_pf_line("warn", "transcriber", "could not be built; needs macOS 26 or newer",
+                 quiet = quiet)
+    } else {
+      chk <- suppressWarnings(system2(bin, "--check", stdout = TRUE, stderr = TRUE))
+      if (identical(as.integer(attr(chk, "status") %||% 0L), 0L)) {
+        loc <- sub("^installed: ", "", grep("^installed: ", chk, value = TRUE))
+        ph_pf_line("ok", "transcriber", bin, quiet = quiet)
+        ph_pf_line("ok", "languages", if (length(loc)) loc[1] else "none",
+                   quiet = quiet)
+      } else {
+        ph_pf_line("warn", "transcriber",
+                   if (length(chk)) chk[1] else "unavailable", quiet = quiet)
+      }
+    }
+  }
+
   if (!quiet) {
     message("note microphone     if recording fails, check ",
             ph_privacy_pane(),

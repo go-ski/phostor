@@ -40,7 +40,7 @@ test('the microphone check finds the fake device and shows a level', async ({ pa
 
   // The advice comes from ph_mic_advice() on the R side.
   await expect(page.locator('#ph-mic-advice')).toContainText(/Microphone open|Speak/);
-  await expect(page.locator('#ph-mic-detail')).toContainText('audio/webm');
+  await expect(page.locator('#ph-mic-detail')).toContainText(/audio\/(mp4|ogg|webm)/);
 
   // The three-second test recording uses the same MediaRecorder path a sitting
   // does, and returns a playable blob.
@@ -92,9 +92,9 @@ test('a sitting records visits, and a revisit gets its own sidecar', async ({ pa
   expect(ymls.length).toBe(3);
   expect(ymls.some((f) => f.endsWith('visit-0002.yml'))).toBe(true);
 
-  const webms = H.visitFiles('.webm');
-  expect(webms.length).toBe(3);
-  for (const f of webms) H.expectValidWebm(f);
+  const audio = H.audioFiles();
+  expect(audio.length).toBe(3);
+  for (const f of audio) H.expectValidAudio(f);
 
   // No half-written takes remain.
   expect(H.visitFiles('.part').length).toBe(0);
@@ -180,7 +180,7 @@ test('pause closes the visit and resume opens a new one', async ({ page }) => {
 });
 
 // --- audio completeness -----------------------------------------------------
-// The specs above prove each .webm is a valid container. They do not prove it
+// The specs above prove each recording is a valid container. They do not prove it
 // holds everything the microphone produced, which is how the dropped-final-
 // chunk bug survived them.
 
@@ -223,7 +223,7 @@ test('a visit shorter than one chunk still records its audio', async ({ page }) 
   await page.goto('/');
   await page.waitForSelector('.ph-tree');
   const ids = await H.photoIds(page);
-  const before = H.visitFiles('.webm').length;
+  const before = H.audioFiles().length;
 
   await page.click('#start');
   await page.waitForSelector('.modal-content');
@@ -240,9 +240,9 @@ test('a visit shorter than one chunk still records its audio', async ({ page }) 
   await page.waitForSelector('.modal-content:has-text("Sitting ended")');
   await page.click('.modal-footer button');
 
-  const webms = H.visitFiles('.webm');
-  expect(webms.length).toBeGreaterThan(before);
-  for (const f of webms.slice(before)) H.expectValidWebm(f, 64);
+  const audio = H.audioFiles();
+  expect(audio.length).toBeGreaterThan(before);
+  for (const f of audio.slice(before)) H.expectValidAudio(f, 64);
   expect(H.visitFiles('.part').length).toBe(0);
 });
 
@@ -292,7 +292,7 @@ test('a visit whose recorder never reports stopping still finalises', async ({ p
   await page.goto('/');
   await page.waitForSelector('.ph-tree');
   const ids = await H.photoIds(page);
-  const before = H.visitFiles('.webm').length;
+  const before = H.audioFiles().length;
 
   await page.click('#start');
   await page.waitForSelector('.modal-content');
@@ -312,7 +312,7 @@ test('a visit whose recorder never reports stopping still finalises', async ({ p
                              { timeout: 30000 });
   await page.click('.modal-footer button');
 
-  expect(H.visitFiles('.webm').length).toBeGreaterThan(before);
+  expect(H.audioFiles().length).toBeGreaterThan(before);
   expect(H.visitFiles('.part').length).toBe(0);
 });
 

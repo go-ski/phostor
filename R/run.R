@@ -79,6 +79,13 @@ ph_app <- function(config = NULL, port = 7655L,
     else Sys.setenv(PHOSTOR_CONFIG = old)
   }, add = TRUE)
 
+  # Compile the transcriber now rather than when the first photograph is left:
+  # the build takes about a second, and there it would land in the middle of a
+  # sitting with the Shiny loop waiting on it. Cached after the first run, so
+  # this is usually a no-op, and a machine that cannot build one carries on
+  # recording without transcripts.
+  if (isTRUE(cfg$transcribe)) ph_transcribe_build(quiet = TRUE)
+
   message(sprintf("phostor: http://127.0.0.1:%d", as.integer(port)))
   lb <- isTRUE(launch_browser)
   if (lb) {
@@ -118,6 +125,7 @@ ph_status <- function(config = NULL) {
   } else 0L
   orphans <- length(ph_orphan_audio(cfg))
   people <- ph_known_people(cfg)
+  waiting <- ph_untranscribed(cfg)
 
   message("  photographs: ", nrow(idx))
   message("  sittings   : ", nrow(sess),
@@ -128,12 +136,17 @@ ph_status <- function(config = NULL) {
                                                  collapse = ", "),
                                      if (length(people) > 6) ", ..." else "",
                                      ")") else "")
+  if (waiting) {
+    message("  untranscribed: ", waiting, " recording(s) -- run ",
+            "`phostor transcribe` to fill them in")
+  }
   if (orphans) {
     message("  interrupted: ", orphans, " .part file(s) -- audio from a ",
             "visit that did not close; playable, and not deleted by phostor")
   }
   invisible(list(photos = nrow(idx), sittings = nrow(sess), visits = sidecars,
-                 people = length(people), orphans = orphans))
+                 people = length(people), orphans = orphans,
+                 untranscribed = waiting))
 }
 
 # ---------------------------------------------------------------------------
@@ -153,6 +166,7 @@ ph_cli_usage <- function() {
     "  go         index, render, then launch",
     "  status     what this project holds",
     "  preflight  check the tools phostor needs",
+    "  transcribe write a transcript for every recording   [--force]",
     "",
     "The work directory is where config.yml lives. It is taken from --work,",
     "$PHOSTOR_WORK, or ./config.yml.",
@@ -199,6 +213,8 @@ ph_cli <- function(args = character(0)) {
                launch_browser = TRUE),
     status = ph_status(work),
     preflight = ph_preflight(quiet = quiet),
+    transcribe = ph_transcribe_all(work, force = ph_has_flag(args, "--force"),
+                                   quiet = quiet),
     {
       message("phostor: unknown command '", cmd, "'")
       ph_cli_usage()

@@ -44,6 +44,13 @@ ph_config_defaults <- function() {
     # Seconds of audio per uploaded chunk. Smaller loses less to a crash and
     # costs more round trips.
     chunk_seconds = 5L,
+    # Transcribe each recording when its photograph is left. Needs macOS 26
+    # and swiftc; where those are missing the recording is kept and no
+    # transcript is written.
+    transcribe = TRUE,
+    # Language to transcribe in, as a BCP-47 tag such as "en-US". Empty means
+    # whatever this Mac is set to.
+    transcribe_locale = "",
     extensions = ph_default_extensions,
     cruft = ph_default_cruft
   )

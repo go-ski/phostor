@@ -5,16 +5,23 @@
 # name when the visit closes. So a crash loses at most one chunk, and a `.part`
 # file left behind marks an interrupted visit whose sidecar was never written.
 #
-# Chunks from a single MediaRecorder concatenate into a valid WebM, so no
-# ffmpeg or muxing step is needed. The app pins the recorder to one format for
-# the same reason -- see inst/shiny/app.R.
+# Chunks from a single MediaRecorder concatenate into a valid file, so no
+# ffmpeg or muxing step is needed. This holds for every container the app will
+# use: WebM and Ogg are streams of self-framing blocks, and MP4 arrives as an
+# init segment followed by self-contained fragments. The app pins the recorder
+# to one format per sitting for the same reason -- see inst/shiny/app.R.
+#
+# Which container it picks decides whether the recording can be transcribed:
+# AVFoundation reads MP4 and Ogg and cannot read WebM. See R/transcribe.R.
 
 #' Open a visit's audio file.
 #'
 #' @param cfg A config list from [ph_config()].
 #' @param rel_path Path of the photograph relative to `photo_root`.
 #' @param visit Visit number.
-#' @param ext Container extension, without the dot.
+#' @param ext Container extension, without the dot. Normally derived from what
+#'   the browser reported it is recording, with [ph_audio_ext()]; the default
+#'   is the container every browser falls back to.
 #' @return The `.part` path to append to.
 #' @examples
 #' \dontrun{

@@ -30,16 +30,20 @@ brew install vips exiftool
 
 `vipsthumbnail` (part of libvips) is the only hard requirement: it renders the
 display copies. `exiftool` is optional; without it, capture dates and
-dimensions are blank.
+dimensions are blank. [Transcripts](#transcripts) are optional too, and need
+macOS 26 or newer with Xcode's command line tools.
 
 R packages: `yaml`, `base64enc`; plus `shiny`, `bslib` and `htmltools` for the
 app, and `pkgload` to run `exec/phostor` against an uninstalled source tree.
 
-**Use Chrome or Firefox.** Recording needs `MediaRecorder` with Opus in WebM.
-Both support it, and both are tested end to end. Safari does not: it records
-fragmented MP4, whose chunks do not concatenate into a playable file.
-`ph_app()` opens a browser that can record in preference to the system default,
-and reports which one it opened.
+**Use Chrome or Firefox.** Recording needs `MediaRecorder`, and both are tested
+end to end. Chrome records MP4 and Firefox records Ogg; either falls back to
+WebM. Safari is not supported: its fragmented MP4 chunks do not concatenate
+into a playable file, where Chrome's do. `ph_app()` opens a browser that can
+record in preference to the system default, and reports which one it opened.
+
+Which container a browser picks decides whether a recording can be
+transcribed -- see [Transcripts](#transcripts).
 
 ### If recording fails, check the operating system first
 
@@ -135,9 +139,10 @@ Later, pick the sitting from the dropdown and press **Play**.
   sidecars/
     Trips/Skye/img_0421.jpg/    mirrors the photo directory, a folder per photo
       visit-0001.yml
-      visit-0001.webm
+      visit-0001.mp4
+      visit-0001.txt            the transcript, when there is one
       visit-0002.yml
-      visit-0002.webm
+      visit-0002.mp4
 ```
 
 The sidecar tree mirrors the photo directory path for path, and each
@@ -157,7 +162,7 @@ session: 2026-08-23-1930
 started: '2026-08-23T20:14:07Z'
 ended: '2026-08-23T20:15:41Z'
 duration: 94.2
-audio: visit-0003.webm
+audio: visit-0003.mp4
 bytes_expected: 812344
 people:
 - Nana Vera
@@ -170,12 +175,13 @@ transcript: ~
 ```
 
 `people`, `place`, `event` and `when` hold what was said, kept separate from
-EXIF: on a scanned print the EXIF date is the date of the scan. `transcript` is
-reserved so a later offline pass can fill it in without a format change; the
-key is written now and readers can rely on it existing.
+EXIF: on a scanned print the EXIF date is the date of the scan. `transcript`
+stays reserved and is always written as `~`: the transcript itself lives in
+`visit-NNNN.txt` beside the audio, so that filling it in never means rewriting
+a file you may have hand-edited.
 
 `bytes_expected` is how much audio the browser reported recording for the
-visit. If it exceeds the size of the `.webm` beside it, some audio did not
+visit. If it exceeds the size of the recording beside it, some audio did not
 reach disk, and the app said so at the time.
 
 These are plain YAML files with a comment at the top, and can be hand-edited.
@@ -209,18 +215,24 @@ directory the config is in, so there is no `work_dir:` key to keep in step.
   each one. Set it to `0` to keep every visit.
 - `chunk_seconds` — seconds of audio per upload. Each chunk is written to disk
   as it arrives, so this is also how much a crash can lose.
+- `transcribe` — write a transcript for each recording once you move on. See
+  [Transcripts](#transcripts).
+- `transcribe_locale` — the language to transcribe in, as a BCP-47 tag such as
+  `en-GB`. Empty means whatever this Mac is set to.
 - `extensions` / `cruft` — what counts as a photograph, and what to skip.
 
 ## How recording works
 
 The browser records with `MediaRecorder` and sends the stream in chunks. Each
-chunk is appended to a `visit-NNNN.webm.part` file as it arrives, and renamed
+chunk is appended to a `visit-NNNN.<ext>.part` file as it arrives, and renamed
 to its final name when the visit closes. A crash therefore loses one chunk, and
 a `.part` file left behind marks an interrupted visit; it is playable, and
 phostor does not delete it. `ph_status()` reports them.
 
-Chunks from a single recorder concatenate into a valid WebM, so no `ffmpeg` or
-muxing step is needed. phostor pins the recording format for the same reason.
+Chunks from a single recorder concatenate into a valid file, so no `ffmpeg` or
+muxing step is needed: Ogg and WebM are streams of self-framing blocks, and MP4
+arrives as an init segment followed by self-contained fragments. phostor pins
+the recording format for the sitting for the same reason.
 
 Chunks are acknowledged one at a time, and an acknowledgement is matched
 against the chunk in flight. Shiny coalesces repeated writes to one input
@@ -251,6 +263,54 @@ audio is still queued in the page. What reached disk is kept — the visit's
 file is renamed and its sidecar written — but no total arrives from the
 browser, so `bytes_expected` is empty and nothing flags the shortfall. End the
 sitting rather than closing the tab.
+
+## Transcripts
+
+When you move on to the next photograph, the one you just left is transcribed
+in the background while you talk about the next. The text is written beside the
+audio as `visit-NNNN.txt`:
+
+```
+sidecars/Trips/Skye/img_0421.jpg/
+  visit-0001.mp4     what was said
+  visit-0001.txt     what it said
+  visit-0001.yml     everything else
+```
+
+Transcription runs entirely on this Mac. Nothing is uploaded, there is no
+account and no per-minute cost. It uses `SpeechAnalyzer`, which arrived in
+macOS 26, through a small Swift helper compiled on first use -- so it needs
+macOS 26 or newer and Xcode's command line tools (`xcode-select --install`).
+Without those, phostor records exactly as before and writes no transcripts.
+`ph_preflight()` reports which it found, and which languages are installed.
+
+Turn it off, or fix the language, in `config.yml`:
+
+```yaml
+transcribe: true
+transcribe_locale: en-GB    # empty means whatever this Mac is set to
+```
+
+The sidecar's `transcript:` key stays reserved and is always written as `~`.
+Keeping the text in its own file means filling it in never rewrites a
+`visit-NNNN.yml` you may have hand-edited, and a slow transcript never races
+the sidecar it belongs to.
+
+**Not every recording can be transcribed.** The transcriber reads the
+containers AVFoundation opens -- MP4, Ogg, M4A, WAV -- and cannot read WebM,
+whatever codec is inside it. Chrome and Firefox are both asked for a readable
+container first and only fall back to WebM, so this bites mainly on recordings
+made before transcription existed. They still play; they just have no text.
+
+To fill in everything that has none, including after changing the language:
+
+```sh
+phostor transcribe            # or ph_transcribe_all()
+phostor transcribe --force    # redo the ones already done
+```
+
+`ph_status()` counts what is still waiting, and `ph_transcript()` reads one
+back.
 
 ## Read-only guarantee
 
@@ -286,9 +346,9 @@ permission prompt, or depend on system privacy settings.
 
 Each browser gets its own photo collection, work directory and phostor
 instance. The specs drive the UI and then assert on disk: the sidecars written,
-the `.webm` files carrying a valid EBML header and an `OpusHead` stream,
-`path.tsv` alternating `show`/`leave`, and the photo directory byte-for-byte
-unchanged afterwards.
+the recordings carrying a valid container header for whichever format the
+browser chose, `path.tsv` alternating `show`/`leave`, and the photo directory
+byte-for-byte unchanged afterwards.
 
 Chrome is used as installed. Firefox needs Playwright's own build, once:
 

@@ -32,7 +32,8 @@ Suggests:
     pkgload
 Config/testthat/edition: 3
 SystemRequirements: libvips (vipsthumbnail), exiftool, a browser with
-    MediaRecorder support for Opus in WebM (Chrome)
+    MediaRecorder (Chrome or Firefox); transcription is optional and needs
+    macOS 26 or newer with swiftc (Xcode command line tools)
 URL: https://github.com/go-ski/phostor
 BugReports: https://github.com/go-ski/phostor/issues
 Config/roxygen2/version: 8.1.0
