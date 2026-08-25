@@ -1,6 +1,6 @@
 # phostor
 
-**An app that adds stories to photos.**
+An app that adds **stor**ies to **pho**tos!
 
 People look at photographs on a screen and talk about them: who is in them,
 where they were taken, what was happening, how everyone is related. phostor
