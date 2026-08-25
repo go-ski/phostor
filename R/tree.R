@@ -2,7 +2,7 @@
 #
 # HTML is pasted as escaped strings rather than built with div()/span(): tag
 # objects cost seconds per render against milliseconds for identical output
-# (measured in dundee at 35,000 rows). The tree is rendered once per session
+# (measured at 35,000 rows). The tree is rendered once per session
 # and the selection highlight is moved client-side.
 #
 # Nesting uses <details>/<summary>: no JavaScript, no tree library, and

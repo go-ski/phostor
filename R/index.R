@@ -1,9 +1,7 @@
 # The catalogue. One TSV row per photograph, rebuilt on demand.
 #
-# dundee enumerates through a bash `find` pipeline because its library is an
-# SMB mount where R round-trips dominate. A phostor collection is local and a
-# few hundred files, so list.files() is the whole scanner and there is no shell
-# layer.
+# A phostor collection is local and a few hundred files, so list.files() is the
+# whole scanner and there is no shell layer.
 
 # Columns of index.tsv, in order. Anything reading the file should go through
 # ph_read_index() rather than assuming these.

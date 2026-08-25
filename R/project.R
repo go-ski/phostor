@@ -12,8 +12,8 @@
 # directory per read-only photo directory, so a second collection is a second
 # directory rather than a second set of paths to keep in step.
 #
-# The path helpers below are ported unchanged from dundee, which has the same
-# read-only requirement. They are what enforces it.
+# `photo_root` is read-only: phostor never writes under it, and never changes
+# an mtime there. The path helpers below are what enforce that.
 
 `%||%` <- function(a, b) if (is.null(a)) b else a
 na_if_empty <- function(x) if (length(x) && nzchar(x)) x else NULL

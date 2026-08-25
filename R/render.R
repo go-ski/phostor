@@ -5,8 +5,8 @@
 # session, HEIC and TIFF are normalised to a format browsers display, and
 # vipsthumbnail applies EXIF rotation.
 #
-# No LRU cache: dundee bounds its original cache because it handles tens of
-# thousands of files; at this size a cache is not worth the complexity.
+# No LRU cache: bounding one earns its keep at tens of thousands of files; at
+# this size it is not worth the complexity.
 
 # Formats a browser renders from raw bytes. Anything else must be converted
 # first, so the display copy is always rendered whatever the source.
