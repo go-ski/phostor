@@ -118,6 +118,28 @@ body.ph-present .ph-tags, body.ph-present .ph-hist-wrap,
 body.ph-present .ph-hide { display:none !important; }
 body.ph-present .ph-img-wrap { border-radius:0; }
 body.ph-present { overflow:hidden; }
+
+/* b: fold away what is under the photograph, keeping everything else. The
+   caption stays, as it does in presentation mode -- a photograph on screen
+   should always say what it is. .ph-img-wrap is flex:1 1 auto, so it takes
+   the space without anything else having to change. */
+body.ph-nobottom .ph-tags, body.ph-nobottom .ph-hist-wrap {
+  display:none !important; }
+
+/* How to leave presentation mode, said once on the way in and then faded.
+   Long enough to read, gone before anyone is looking at the photograph. */
+.ph-stopped { max-width:32rem; margin:18vh auto; text-align:center;
+  color:var(--ph-dim); }
+.ph-stopped h5 { color:var(--ph-ink); margin-bottom:.5rem; }
+/* Shiny's own disconnect overlay would otherwise grey out the notice. */
+body[data-ph-quit] #shiny-disconnected-overlay { display:none !important; }
+
+.ph-hint { position:fixed; left:50%; bottom:4.5rem; transform:translateX(-50%);
+  background:rgba(0,0,0,.72); color:var(--ph-ink); border:1px solid var(--ph-line);
+  border-radius:999px; padding:.4rem 1rem; font-size:.85rem; z-index:1090;
+  display:none; opacity:0; transition:opacity .5s; pointer-events:none; }
+body.ph-present .ph-hint { display:block; }
+body.ph-present .ph-hint.on { opacity:1; }
 .ph-mic { position:fixed; right:1rem; top:3.4rem; width:26rem; max-width:92vw;
   z-index:1080; background:var(--ph-panel); border:1px solid var(--ph-line);
   border-radius:8px; padding:.8rem; box-shadow:0 10px 30px rgba(0,0,0,.5);
@@ -555,6 +577,24 @@ ph_js <- "
     send('play_ended', {at:Date.now(), finished:!!finished});
   }
 
+  // ---- presentation ------------------------------------------------------
+  // The client is the only place this is held. The Presentation button asks
+  // for a toggle rather than setting a value: with the state in two places,
+  // entering by the button and leaving by the key left them disagreeing, and
+  // the button then did nothing until it was clicked twice.
+  function inPresent(){ return document.body.classList.contains('ph-present'); }
+  function setPresent(on){
+    document.body.classList.toggle('ph-present', !!on);
+    if (on) showPresentHint();
+  }
+  function showPresentHint(){
+    var h = el('ph-present-hint');
+    if (!h) return;
+    h.classList.add('on');
+    clearTimeout(PH.hintTimer);
+    PH.hintTimer = setTimeout(function(){ h.classList.remove('on'); }, 2500);
+  }
+
   function showPhoto(it){
     var im = document.getElementById('ph-photo');
     if (im && it.src) im.src = it.src;
@@ -693,7 +733,13 @@ ph_js <- "
       e.preventDefault();
       send('photo_pick', PH.order[n]);
     } else if (e.key === 's') {
-      document.body.classList.toggle('ph-present');
+      setPresent(!inPresent());
+    } else if (e.key === 'b') {
+      document.body.classList.toggle('ph-nobottom');
+    } else if (e.key === 'Escape') {
+      // Leaves, never enters. In browser full screen the first Escape is taken
+      // by the browser to leave that, so it takes a second one to get here.
+      if (inPresent()) { e.preventDefault(); setPresent(false); }
     } else if (e.key === 'f') {
       if (document.fullscreenElement) document.exitFullscreen();
       else document.documentElement.requestFullscreen();
@@ -817,7 +863,15 @@ ph_js <- "
       setTimeout(checkSeeded, 0);
     });
     Shiny.addCustomMessageHandler('ph_present', function(m){
-      document.body.classList.toggle('ph-present', !!m.on);
+      setPresent(!inPresent());
+    });
+    Shiny.addCustomMessageHandler('ph_quit', function(m){
+      // Says what happened, rather than leaving Shiny's disconnect grey to
+      // imply something went wrong. data-ph-quit is what the tests wait on.
+      document.body.dataset.phQuit = '1';
+      document.body.innerHTML =
+        '<div class=\"ph-stopped\"><h5>phostor has stopped</h5>' +
+        '<p>Everything recorded is on disk. You can close this tab.</p></div>';
     });
   });
 })();
@@ -832,10 +886,17 @@ ui <- page_sidebar(
   sidebar = sidebar(
     width = 340,
     div(class = "d-flex gap-1 mb-1",
-        actionButton("present", "Presentation", class = "btn-sm btn-outline-secondary w-100")),
+        actionButton("present", "Presentation",
+                     class = "btn-sm btn-outline-secondary w-100"),
+        actionButton("quit", "Quit", class = "btn-sm btn-outline-danger")),
     uiOutput("tree"),
     div(class = "mt-2 pt-2 border-top small text-secondary",
-        HTML("&larr; &rarr; move &middot; <b>s</b> sidebar &middot; <b>f</b> full screen"))
+        # Non-breaking, so the narrow sidebar wraps at a separator rather
+        # than in the middle of "full screen".
+        HTML(paste("&larr;&nbsp;&rarr; move &middot; <b>s</b>&nbsp;presentation",
+                   "&middot; <b>b</b>&nbsp;bottom &middot;",
+                   "<b>f</b>&nbsp;full&nbsp;screen",
+                   "<br><b>Esc</b> leaves presentation")))
   ),
   div(
     class = "ph-stage",
@@ -896,7 +957,11 @@ ui <- page_sidebar(
         )
       )
     ),
-    div(class = "ph-hist-wrap ph-hide", uiOutput("history"))
+    div(class = "ph-hist-wrap ph-hide", uiOutput("history")),
+    # Not .ph-hide: that is the class presentation mode hides, and this is the
+    # one thing that has to be visible inside it.
+    div(id = "ph-present-hint", class = "ph-hint",
+        HTML("<b>s</b> or <b>Esc</b> to leave"))
   )
 )
 
@@ -924,10 +989,10 @@ server <- function(input, output, session) {
     reserved = list(),       # rel_path -> highest visit number handed out
     ending = FALSE,          # End sitting pressed, waiting for visits to drain
     tick = 0L,
+    quitting = FALSE,        # Quit pressed, waiting for visits to drain
     tags_for = NULL,         # photograph the tag fields currently hold
     tags_seeded = NULL,      # what was put in them, to tell an edit from that
-    playing = FALSE,
-    present = FALSE
+    playing = FALSE
   )
 
   # Every message to the client goes through here. finalize_visit() also runs
@@ -1166,7 +1231,7 @@ server <- function(input, output, session) {
     rv$session_dir <- NULL
     rv$reserved <- list()
     rv$mic_msg <- NULL
-    if (!is.null(d)) {
+    if (!is.null(d) && !isTRUE(rv$quitting)) {
       p <- ph_path_read(d)
       showModal(modalDialog(
         title = "Sitting ended",
@@ -1322,6 +1387,7 @@ server <- function(input, output, session) {
     rv$tick <- rv$tick + 1L
     finish_pause()
     finish_sitting()
+    finish_quit()
     invisible(NULL)
   }
 
@@ -1463,10 +1529,52 @@ server <- function(input, output, session) {
       actionButton("play", "Play", class = "btn-sm btn-primary"))
   })
 
-  observeEvent(input$present, {
-    rv$present <- !isTRUE(rv$present)
-    tell("ph_present", list(on = rv$present))
+  # No state here: the client holds it. See the note by setPresent().
+  observeEvent(input$present, tell("ph_present", list()))
+
+  # ---- quitting ------------------------------------------------------------
+  observeEvent(input$quit, {
+    running <- !is.null(rv$session_dir)
+    showModal(modalDialog(
+      title = "Quit phostor?",
+      if (running) {
+        paste("A sitting is in progress. Quitting ends it first, so the",
+              "recording on screen is saved before phostor stops.")
+      } else {
+        "This stops phostor. Anything already recorded is on disk."
+      },
+      footer = tagList(modalButton("Cancel"),
+                       actionButton("quit_confirm", "Quit",
+                                    class = "btn-sm btn-danger"))))
   })
+
+  observeEvent(input$quit_confirm, {
+    removeModal()
+    save_tags()
+    rv$quitting <- TRUE
+    if (!is.null(rv$session_dir)) {
+      # The same path as End sitting. An audio visit reaches finalize_visit()
+      # only after the browser flushes its last chunk, so the server cannot
+      # stop here: finish_quit() waits for the queue to drain.
+      rv$ending <- TRUE
+      close_visit()
+      finish_sitting()
+    }
+    finish_quit()
+  })
+
+  # Called wherever finish_sitting() is, and waits on the same condition: every
+  # recording has reached disk.
+  finish_quit <- function() {
+    if (!isTRUE(rv$quitting) || length(rv$pending)) return(invisible(NULL))
+    rv$quitting <- FALSE
+    tell("ph_quit", list())
+    # Sent before the socket closes: stopApp() here would return from runApp()
+    # while the message was still queued, and the browser would show Shiny's
+    # own disconnect grey instead of saying what happened.
+    session$onFlushed(function() shiny::stopApp(), once = TRUE)
+    invisible(NULL)
+  }
 
   # ---- this photograph's visits ------------------------------------------
   # What was said about the photograph on screen: each visit's recording, and

@@ -87,6 +87,7 @@ ph_app <- function(config = NULL, port = 7655L,
   if (isTRUE(cfg$transcribe)) ph_transcribe_build(quiet = TRUE)
 
   message(sprintf("phostor: http://127.0.0.1:%d", as.integer(port)))
+  message("phostor: Quit in the app stops it, or press Ctrl+C here")
   lb <- isTRUE(launch_browser)
   if (lb) {
     br <- ph_browser_launcher(browser)
@@ -170,6 +171,8 @@ ph_cli_usage <- function() {
     "",
     "The work directory is where config.yml lives. It is taken from --work,",
     "$PHOSTOR_WORK, or ./config.yml.",
+    "",
+    "The app runs until you stop it: Quit in the app, or Ctrl+C here.",
     ""), collapse = "\n"))
   invisible(NULL)
 }

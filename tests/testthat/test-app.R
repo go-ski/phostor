@@ -718,3 +718,47 @@ test_that("one photograph's tags are not written onto the next", {
   expect_equal(ph_tags(p$cfg, rel_of(b))$place, "")
   expect_false(file.exists(file.path(ph_visit_dir(p$cfg, rel_of(b)), "tags.yml")))
 })
+
+test_that("quitting ends the sitting in progress rather than dropping it", {
+  # The recording on screen must reach disk before the server stops.
+  p <- app_project(min_visit_seconds = 0)
+  idx <- ph_read_index(p$cfg)
+  rel <- idx$rel_path[1]
+  shiny::testServer(app_dir_for(p), {
+    session$setInputs(photo_pick = idx$id[1])
+    session$setInputs(start = 1)
+    session$setInputs(mic_ready = list(ok = FALSE, why = "test"))
+    session$setInputs(quit = 1)
+    session$setInputs(quit_confirm = 1)
+  })
+  expect_equal(ph_visit_counts(p$cfg, rel), 1L)
+  # And the sitting is closed off properly, not left half-written.
+  sess <- ph_sessions(p$cfg)
+  expect_equal(nrow(sess), 1L)
+  path <- ph_path_read(sess$dir[1])
+  expect_equal(path$event[nrow(path)], "end")
+})
+
+test_that("quitting saves what was typed but not yet left", {
+  p <- app_project()
+  idx <- ph_read_index(p$cfg)
+  rel <- idx$rel_path[1]
+  shiny::testServer(app_dir_for(p), {
+    session$setInputs(photo_pick = idx$id[1])
+    session$setInputs(tags_now = list(rel = rel, people = list(),
+                                      place = "Elgol", event = "", when = ""))
+    session$setInputs(quit = 1)
+    session$setInputs(quit_confirm = 1)
+  })
+  expect_equal(ph_tags(p$cfg, rel)$place, "Elgol")
+})
+
+test_that("quitting with no sitting running writes nothing", {
+  p <- app_project()
+  shiny::testServer(app_dir_for(p), {
+    session$setInputs(quit = 1)
+    session$setInputs(quit_confirm = 1)
+  })
+  expect_equal(nrow(ph_sessions(p$cfg)), 0L)
+  expect_equal(length(list.files(p$cfg$sidecar_dir, recursive = TRUE)), 0L)
+})
