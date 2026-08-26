@@ -23,6 +23,7 @@ Imports:
     utils,
     stats
 Suggests:
+    tuneR,
     shiny,
     bslib,
     htmltools,

@@ -98,6 +98,7 @@ ph_app <- function(config = NULL, port = 7655L,
 
   message(sprintf("phostor: http://127.0.0.1:%d", as.integer(port)))
   message("phostor: Quit in the app stops it, or press Ctrl+C here")
+  ph_app_notes(cfg)
   lb <- isTRUE(launch_browser)
   if (lb) {
     br <- ph_browser_launcher(browser)
@@ -136,6 +137,7 @@ ph_status <- function(config = NULL) {
   } else 0L
   orphans <- length(ph_orphan_audio(cfg))
   old_renders <- ph_render_orphans(cfg)
+  named <- ph_named_counts(cfg)
   people <- ph_known_people(cfg)
   waiting <- ph_untranscribed(cfg)
 
@@ -152,6 +154,10 @@ ph_status <- function(config = NULL) {
     message("  untranscribed: ", waiting, " recording(s) -- run ",
             "`phostor transcribe` to fill them in")
   }
+  if (named$total) {
+    message(sprintf("  speakers   : %d of %d phrase(s) named, %d by you",
+                    named$named, named$total, named$manual))
+  }
   if (orphans) {
     message("  interrupted: ", orphans, " .part file(s) -- audio from a ",
             "visit that did not close; playable, and not deleted by phostor")
@@ -166,12 +172,43 @@ ph_status <- function(config = NULL) {
   }
   invisible(list(photos = nrow(idx), sittings = nrow(sess), visits = sidecars,
                  people = length(people), orphans = orphans,
-                 untranscribed = waiting, old_renders = length(old_renders)))
+                 untranscribed = waiting, old_renders = length(old_renders),
+                 named = named$named))
 }
 
 # ---------------------------------------------------------------------------
 # command line
 # ---------------------------------------------------------------------------
+
+# Name the speakers in the latest sitting, or in every one. Reports how well it
+# does on the phrases a person named before spreading anything.
+# What is worth saying as the app starts, beyond the address. Its own function
+# so it can be tested without binding a port and starting a server.
+ph_app_notes <- function(cfg) {
+  # Only for someone already naming speakers. Anyone who records and looks at
+  # photographs should not be told about a package they have no use for.
+  if (!requireNamespace("tuneR", quietly = TRUE) &&
+      ph_named_counts(cfg)$manual > 0) {
+    message("phostor: names are saved but will not spread without the tuneR ",
+            "package -- install.packages(\"tuneR\")")
+  }
+  invisible(NULL)
+}
+
+ph_speakers_cli <- function(config = NULL, all = FALSE) {
+  cfg <- ph_as_config(config)
+  sess <- ph_sessions(cfg)
+  if (!nrow(sess)) {
+    message("phostor: no sittings yet")
+    return(invisible(NULL))
+  }
+  dirs <- if (isTRUE(all)) sess$dir else sess$dir[1]
+  for (d in dirs) {
+    message("phostor: ", basename(d))
+    ph_speakers_apply(cfg, d)
+  }
+  invisible(dirs)
+}
 
 ph_cli_usage <- function() {
   message(paste(c(
@@ -187,6 +224,7 @@ ph_cli_usage <- function() {
     "  status     what this project holds",
     "  preflight  check the tools phostor needs",
     "  transcribe write a transcript for every recording   [--force]",
+    "  speakers   name who spoke, from the phrases you named   [--all]",
     "",
     "The work directory is where config.yml lives. It is taken from --work,",
     "$PHOSTOR_WORK, or ./config.yml.",
@@ -237,6 +275,7 @@ ph_cli <- function(args = character(0)) {
     preflight = ph_preflight(quiet = quiet),
     transcribe = ph_transcribe_all(work, force = ph_has_flag(args, "--force"),
                                    quiet = quiet),
+    speakers = ph_speakers_cli(work, all = ph_has_flag(args, "--all")),
     {
       message("phostor: unknown command '", cmd, "'")
       ph_cli_usage()

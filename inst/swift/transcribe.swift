@@ -51,6 +51,7 @@ struct Options {
   var locale = Locale.current
   var out: String?
   var check = false
+  var pcm = false
   var input: String?
 }
 
@@ -59,6 +60,8 @@ func parse(_ argv: [String]) -> Options {
   var i = 0
   while i < argv.count {
     switch argv[i] {
+    case "--pcm":
+      o.pcm = true
     case "--check":
       o.check = true
     case "--locale":
@@ -72,6 +75,7 @@ func parse(_ argv: [String]) -> Options {
     case "--help", "-h":
       print("""
         usage: phostor-transcribe [--locale LOCALE] --out FILE AUDIO
+               phostor-transcribe --pcm --out FILE.wav AUDIO
                phostor-transcribe --check [--locale LOCALE]
         """)
       exit(0)
@@ -350,6 +354,122 @@ func writeAtomically(_ body: String, to out: URL) -> Bool {
   return true
 }
 
+// Decode to 16 kHz mono WAV. The same AVAssetReader path the transcriber uses,
+// which is the part that knows how to open a fragmented MP4; anything that
+// wants the samples rather than the words reads the result of this.
+//
+// Not gated on macOS 26: this is AVFoundation, not Speech, and R needs it on
+// machines that can never transcribe.
+func writePCM(input: URL, out: URL) async -> Exit {
+  let asset = AVURLAsset(url: input,
+    options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+  let tracks: [AVAssetTrack]
+  do {
+    tracks = try await asset.loadTracks(withMediaType: .audio)
+  } catch {
+    warn("\(input.lastPathComponent): cannot read this format")
+    return .formatUnreadable
+  }
+  guard let track = tracks.first else {
+    warn("\(input.lastPathComponent): no audio track")
+    return .noAudio
+  }
+  let reader: AVAssetReader
+  let output: AVAssetReaderTrackOutput
+  do {
+    reader = try AVAssetReader(asset: asset)
+    output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+      AVFormatIDKey: kAudioFormatLinearPCM,
+      AVSampleRateKey: 16000.0,
+      AVNumberOfChannelsKey: 1,
+      AVLinearPCMBitDepthKey: 16,
+      AVLinearPCMIsFloatKey: false,
+      AVLinearPCMIsBigEndianKey: false,
+      AVLinearPCMIsNonInterleaved: false,
+    ])
+    guard reader.canAdd(output) else {
+      warn("\(input.lastPathComponent): cannot decode this audio")
+      return .formatUnreadable
+    }
+    reader.add(output)
+  } catch {
+    warn("\(input.lastPathComponent): \(error.localizedDescription)")
+    return .formatUnreadable
+  }
+  guard reader.startReading() else {
+    warn("\(input.lastPathComponent): \(reader.error?.localizedDescription ?? "cannot read")")
+    return .formatUnreadable
+  }
+
+  // 16-bit signed, which tuneR::readWave() reads back as integers. Float32
+  // would come back on a wildly different scale and every energy threshold
+  // downstream would move with it.
+  let fmt = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000,
+                          channels: 1, interleaved: true)!
+  var samples = Data()
+  var frames = 0
+  while let sample = output.copyNextSampleBuffer() {
+    guard let buf = pcmBuffer(from: sample, format: fmt),
+          let src = buf.int16ChannelData else { continue }
+    let n = Int(buf.frameLength)
+    frames += n
+    samples.append(UnsafeBufferPointer(start: src[0], count: n))
+  }
+  if reader.status == .failed {
+    warn("\(input.lastPathComponent): \(reader.error?.localizedDescription ?? "read failed")")
+    return .formatUnreadable
+  }
+  guard frames > 0 else {
+    warn("\(input.lastPathComponent): no audio samples")
+    return .noAudio
+  }
+
+  // The header is written by hand. AVAudioFile(forWriting:) ignores the .wav
+  // extension and produces a CAF, which tuneR refuses -- and an extensible
+  // WAVE would be refused too. This is the plain 44-byte canonical form that
+  // every reader accepts.
+  let part = out.appendingPathExtension("part")
+  do {
+    try (wavHeader(frames: frames, rate: 16000) + samples).write(to: part)
+  } catch {
+    warn("cannot write \(out.lastPathComponent): \(error.localizedDescription)")
+    return .write
+  }
+  return writeRename(part, out) ? .ok : .write
+}
+
+// Canonical 44-byte RIFF/WAVE header for mono 16-bit PCM.
+func wavHeader(frames: Int, rate: Int) -> Data {
+  let bytes = frames * 2
+  var d = Data()
+  func str(_ s: String) { d.append(contentsOf: Array(s.utf8)) }
+  func u32(_ v: Int) { var x = UInt32(v).littleEndian
+                       withUnsafeBytes(of: &x) { d.append(contentsOf: $0) } }
+  func u16(_ v: Int) { var x = UInt16(v).littleEndian
+                       withUnsafeBytes(of: &x) { d.append(contentsOf: $0) } }
+  str("RIFF"); u32(36 + bytes); str("WAVE")
+  str("fmt "); u32(16); u16(1); u16(1)          // PCM, one channel
+  u32(rate); u32(rate * 2); u16(2); u16(16)     // byte rate, block align, bits
+  str("data"); u32(bytes)
+  return d
+}
+
+// Rename a finished .part over its destination, so a reader never sees a
+// half-written file.
+func writeRename(_ part: URL, _ out: URL) -> Bool {
+  do {
+    if FileManager.default.fileExists(atPath: out.path) {
+      try FileManager.default.removeItem(at: out)
+    }
+    try FileManager.default.moveItem(at: part, to: out)
+  } catch {
+    try? FileManager.default.removeItem(at: part)
+    warn("cannot write \(out.lastPathComponent): \(error.localizedDescription)")
+    return false
+  }
+  return true
+}
+
 @available(macOS 26.0, *)
 func check(locale requested: Locale) async -> Exit {
   guard SpeechTranscriber.isAvailable else {
@@ -378,6 +498,19 @@ func check(locale requested: Locale) async -> Exit {
 struct PhostorTranscribe {
   static func main() async {
     let options = parse(Array(CommandLine.arguments.dropFirst()))
+
+    // Before the macOS 26 gate on purpose: this is AVFoundation, not Speech,
+    // and R needs the samples on machines that can never transcribe.
+    if options.pcm {
+      guard let input = options.input, let out = options.out else {
+        quit(.usage, "usage: phostor-transcribe --pcm --out FILE.wav AUDIO")
+      }
+      guard FileManager.default.fileExists(atPath: input) else {
+        quit(.formatUnreadable, "no such file: \(input)")
+      }
+      exit(await writePCM(input: URL(fileURLWithPath: input),
+                          out: URL(fileURLWithPath: out)).rawValue)
+    }
 
     guard #available(macOS 26.0, *) else {
       quit(.unavailable, "transcription needs macOS 26 or newer")

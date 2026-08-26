@@ -136,6 +136,22 @@ function indexIds() {
   return out;
 }
 
+// Whether the R that phostor runs under can see tuneR. Some behaviour exists
+// only for the machines that cannot -- naming speakers is optional -- and that
+// case cannot be staged on a machine where the package is installed.
+let _tuneR = null;
+function hasTuneR() {
+  if (_tuneR === null) {
+    try {
+      const out = require('child_process').execSync(
+        'Rscript -e \'cat(requireNamespace("tuneR", quietly=TRUE))\'',
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+      _tuneR = out.trim() === 'TRUE';
+    } catch (e) { _tuneR = false; }
+  }
+  return _tuneR;
+}
+
 // How many sittings this project holds.
 function sessionCount() {
   const d = path.join(WORK, 'sessions');
@@ -188,5 +204,5 @@ async function showing(page, id) {
 
 module.exports = { WORK, PHOTOS, sidecars, visitFiles, audioFiles, AUDIO_EXTS,
                    pathRows, expectValidAudio, micState, waitForVisitChunks, indexIds,
-                   photoIds, openPhoto, showing, sessionCount, recordShortSitting,
+                   photoIds, openPhoto, showing, sessionCount, recordShortSitting, hasTuneR,
                    bytesProduced, bytesStored };

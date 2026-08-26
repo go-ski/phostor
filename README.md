@@ -407,6 +407,69 @@ transcriber could never read shows just its player. Press `b` to fold the
 panel away and give the photograph the height, or `s` for full-screen
 presentation.
 
+## Who said it
+
+Naming speakers needs one package phostor does not otherwise require:
+
+```r
+install.packages("tuneR")
+```
+
+Without it names are still saved, but they will not spread — the app says so
+when you name a phrase, and `ph_preflight()` lists it.
+
+Under each phrase of a transcript is a small chip. Click it and say who spoke.
+Naming one phrase re-works the whole sitting, so the names spread to the other
+photographs while you are still labelling, and a note tells you how well it is
+doing. Nothing to run, and no need to leave the app.
+
+Give each voice **at least two phrases** before the figure means anything:
+leaving out the only example a voice has leaves nothing to recognise it by.
+
+From a terminal, over a whole project:
+
+```sh
+phostor speakers          # the latest sitting
+phostor speakers --all    # every sitting
+```
+
+```r
+ph_speakers_check("~/photo-sto", ph_sessions()$dir[1])   # how well is it doing?
+ph_speakers_apply("~/photo-sto", ph_sessions()$dir[1])   # name the rest
+```
+
+`ph_app()` holds its R session while it runs, so use a second terminal for
+these, or Quit the app first. The panel picks up outside changes when you move
+to another photograph. Avoid naming chips in the app at the same moment as
+running these elsewhere: both rewrite the same file, and one can undo the other.
+
+`ph_speakers_check()` leaves out each phrase you named in turn, works it out
+from the others, and tells you how often it would have been right — on your own
+voices, in your own room. Run it before trusting anything automatic. Automatic
+names are shown dimmed; correcting one makes it yours, and teaches the next
+pass.
+
+**A set of voices reaches only within its sitting.** This is the one rule that
+matters. The same voices, learned from a clean reading and identified across a
+room, were named correctly two times in eight; learned from the room itself,
+eight times in eight. Labelling phrases from the recording guarantees the match,
+because the examples and the speech come from the same microphone in the same
+room on the same day. Labels from one sitting are never used on another.
+
+Two kinds of phrase get no name rather than a guess: those too short to carry a
+voice, and those where the best match does not beat the second by enough.
+
+How much is enough is worked out from your own labels rather than fixed in
+advance, because it has to be. On one family's recordings the winning margin
+was 0.0095 when the guess was right and 0.0011 when it was wrong — it separates
+them well, but any threshold chosen beforehand would have named everything or
+nothing. So phostor asks how decisive it had to be to be right on the phrases
+*you* named, and holds the rest to that.
+
+**What it cannot do.** Two people talking at once cannot be separated by any of
+this, and a family round a table does it constantly. Where the transcriber has
+run two voices into one phrase, the name will be whichever it sounds more like.
+
 ## Read-only guarantee
 
 - `ph_config()` refuses to run when the work directory is the same as, inside,

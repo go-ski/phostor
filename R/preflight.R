@@ -61,6 +61,17 @@ ph_preflight <- function(quiet = FALSE) {
                quiet = quiet)
   }
 
+  # Optional, and a warn rather than a MISS: naming speakers is a corner of
+  # phostor, and preflight must not fail for want of it.
+  ph_pf_line(if (requireNamespace("tuneR", quietly = TRUE)) "ok" else "warn",
+             "tuneR",
+             if (requireNamespace("tuneR", quietly = TRUE)) {
+               paste0(as.character(utils::packageVersion("tuneR")),
+                      " -- for naming who spoke")
+             } else {
+               "install.packages(\"tuneR\") to name who spoke; optional"
+             }, quiet = quiet)
+
   # Recording happens in the browser, which no R-side check can inspect. R can
   # see which browsers are installed and which one the system would open, and
   # the system default may be one that cannot record or has been denied

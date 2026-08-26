@@ -128,27 +128,6 @@ test_that("the app never writes outside the work directory", {
   expect_false(any(grepl("file.path\\(cfg\\$photo_root", src)))
 })
 
-# --- driving the real server ------------------------------------------------
-
-app_project <- function(...) {
-  skip_on_os("windows")
-  skip_if_not_installed("shiny")
-  skip_if_not_installed("bslib")
-  skip_if_not(have_vips(), "vips not installed")
-  skip_if_not(have_vipsthumbnail(), "vipsthumbnail not installed")
-  skip_if(is.null(app_file()), "app.R not reachable")
-  make_project(render = TRUE, ...)
-}
-
-# Points PHOSTOR_CONFIG at the project and returns the app directory, restoring
-# the environment when the calling test finishes. Not a wrapper around
-# testServer(): that captures its `expr` argument unevaluated, so forwarding an
-# expression through another function evaluates it in the wrong frame.
-app_dir_for <- function(p) {
-  withr::local_envvar(c(PHOSTOR_CONFIG = ph_config_snapshot(p$cfg)),
-                      .local_envir = parent.frame())
-  dirname(app_file())
-}
 
 test_that("a scripted sitting records visits, revisits and the path", {
   # min_visit_seconds = 0 because no time passes under testServer and this

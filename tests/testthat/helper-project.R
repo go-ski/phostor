@@ -101,3 +101,29 @@ package_source <- function() {
   files <- list.files("../../R", pattern = "\\.R$", full.names = TRUE)
   unlist(lapply(files, readLines))
 }
+
+# --- the app, for the tests that drive it ----------------------------------
+#
+# In the helper rather than in test-app.R: test-speakers.R drives the app too,
+# and testthat files cannot see each other's definitions.
+# --- driving the real server ------------------------------------------------
+
+app_project <- function(...) {
+  skip_on_os("windows")
+  skip_if_not_installed("shiny")
+  skip_if_not_installed("bslib")
+  skip_if_not(have_vips(), "vips not installed")
+  skip_if_not(have_vipsthumbnail(), "vipsthumbnail not installed")
+  skip_if(is.null(app_file()), "app.R not reachable")
+  make_project(render = TRUE, ...)
+}
+
+# Points PHOSTOR_CONFIG at the project and returns the app directory, restoring
+# the environment when the calling test finishes. Not a wrapper around
+# testServer(): that captures its `expr` argument unevaluated, so forwarding an
+# expression through another function evaluates it in the wrong frame.
+app_dir_for <- function(p) {
+  withr::local_envvar(c(PHOSTOR_CONFIG = ph_config_snapshot(p$cfg)),
+                      .local_envir = parent.frame())
+  dirname(app_file())
+}

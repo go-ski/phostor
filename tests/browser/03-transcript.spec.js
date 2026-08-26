@@ -235,3 +235,122 @@ test('the words light up while the sitting plays back', async ({ page }) => {
   // Stopping takes the highlight with it.
   await expect.poll(() => page.locator('.ph-ph.on').count()).toBe(0);
 });
+
+test('a phrase can be told who said it', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  if (H.sessionCount() === 0) await H.recordShortSitting(page);
+  const { id, visit } = plantTranscript();
+
+  await page.reload();
+  await page.waitForSelector('.ph-tree');
+  await H.openPhoto(page, id);
+  await page.waitForSelector(`#ph-tx-${visit} .ph-ph`);
+
+  // Every phrase offers a chip; an unnamed one reads "+".
+  const chips = page.locator(`#ph-tx-${visit} .ph-spk`);
+  await expect(chips).toHaveCount(PHRASES.length);
+  await expect(chips.first()).toHaveText('+');
+
+  await chips.first().click();
+  await page.waitForSelector('.modal-content');
+  await expect(page.locator('.modal-content')).toContainText('Who said this?');
+  await page.click('#speaker_name + .selectize-control .selectize-input');
+  await page.keyboard.type('Nana Vera');
+  await page.keyboard.press('Enter');
+  await page.click('#speaker_save');
+
+  // The chip carries the name, and it is on disk as a person's answer.
+  await expect(page.locator(`#ph-tx-${visit} .ph-spk`).first())
+    .toHaveText('Nana Vera');
+  const f = H.visitFiles('-speakers.tsv')[0];
+  expect(f, 'no labels file was written').toBeDefined();
+  const rows = fs.readFileSync(f, 'utf8').trim().split('\n');
+  expect(rows[0]).toBe('start\tend\tspeaker\tsource\tconfidence');
+  expect(rows[1]).toContain('Nana Vera');
+  expect(rows[1]).toContain('manual');
+});
+
+test('a name can be taken off again', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  const { id, visit } = plantTranscript();
+  await page.reload();
+  await page.waitForSelector('.ph-tree');
+  await H.openPhoto(page, id);
+  await page.waitForSelector(`#ph-tx-${visit} .ph-spk`);
+
+  await page.locator(`#ph-tx-${visit} .ph-spk`).first().click();
+  await page.waitForSelector('.modal-content');
+  await page.click('#speaker_clear');
+  await expect(page.locator(`#ph-tx-${visit} .ph-spk`).first()).toHaveText('+');
+});
+
+test('a name given on one photograph is offered on the next', async ({ page }) => {
+  // The blank slate: the picker used to read only the photograph on screen, so
+  // a name had to be retyped on every one of them.
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  if (H.sessionCount() === 0) await H.recordShortSitting(page);
+  const planted = plantAll();
+  expect(planted.length).toBeGreaterThan(1);
+
+  await page.reload();
+  await page.waitForSelector('.ph-tree');
+  await H.openPhoto(page, planted[0].id);
+  await page.waitForSelector(`#ph-tx-${planted[0].visit} .ph-spk`);
+  await page.locator(`#ph-tx-${planted[0].visit} .ph-spk`).first().click();
+  await page.waitForSelector('.modal-content');
+  await page.click('#speaker_name + .selectize-control .selectize-input');
+  await page.keyboard.type('Uncle Stefan');
+  await page.keyboard.press('Enter');
+  await page.click('#speaker_save');
+  await expect(page.locator('.modal-content')).toHaveCount(0);
+
+  // A different photograph of the same sitting: the name is on offer.
+  await H.openPhoto(page, planted[1].id);
+  await page.waitForSelector(`#ph-tx-${planted[1].visit} .ph-spk`);
+  await page.locator(`#ph-tx-${planted[1].visit} .ph-spk`).first().click();
+  await page.waitForSelector('.modal-content');
+  await expect.poll(() => page.evaluate(() => {
+    const el = document.getElementById('speaker_name');
+    return el && el.selectize ? Object.keys(el.selectize.options) : [];
+  })).toContain('Uncle Stefan');
+  await page.click('.modal-footer button:has-text("Cancel")');
+});
+
+test('naming a phrase says why the names will not spread', async ({ page }) => {
+  // Only meaningful where tuneR is absent -- which is the machine this is
+  // about: the label must save and the app must say why nothing else happened,
+  // rather than doing nothing in silence. Where the package is installed the
+  // case cannot be staged at all.
+  test.skip(H.hasTuneR(), 'tuneR is installed, so it can spread and says nothing');
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  if (H.sessionCount() === 0) await H.recordShortSitting(page);
+  const { id, visit } = plantTranscript();
+  // Earlier specs in this file have named phrases on this very visit. This one
+  // is about the notice, not about what they left behind, so it starts clean.
+  for (const f of H.visitFiles('-speakers.tsv')) fs.unlinkSync(f);
+
+  await page.reload();
+  await page.waitForSelector('.ph-tree');
+  await H.openPhoto(page, id);
+  await page.waitForSelector(`#ph-tx-${visit} .ph-spk`);
+  await expect(page.locator(`#ph-tx-${visit} .ph-spk`).first()).toHaveText('+');
+
+  // The picker says it too, at the moment you are thinking about names.
+  await page.locator(`#ph-tx-${visit} .ph-spk`).first().click();
+  await page.waitForSelector('.modal-content');
+  await expect(page.locator('.modal-content')).toContainText('tuneR');
+
+  await page.click('#speaker_name + .selectize-control .selectize-input');
+  await page.keyboard.type('Nana Vera');
+  await page.keyboard.press('Enter');
+  await page.click('#speaker_save');
+
+  await expect(page.locator('.shiny-notification')).toContainText('tuneR');
+  // And the name was saved regardless: never raising is still the rule.
+  await expect(page.locator(`#ph-tx-${visit} .ph-spk`).first())
+    .toHaveText('Nana Vera');
+});

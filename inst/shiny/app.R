@@ -105,6 +105,11 @@ body { background:var(--ph-bg); color:var(--ph-ink); }
 /* The transcript. Phrases are inline so they wrap as ordinary prose; the
    highlight moves between them as the recording plays. */
 .ph-tx { margin:.3rem 0 .1rem; line-height:1.55; }
+.ph-spk { cursor:pointer; font-size:.72rem; border-radius:9px; padding:0 .4rem;
+  margin-right:.25rem; background:#3a4150; color:#cfd6e0; white-space:nowrap; }
+.ph-spk:hover { background:var(--ph-on); color:#fff; }
+.ph-spk.guess { background:transparent; color:var(--ph-dim);
+  border:1px dashed var(--ph-line); }
 .ph-ph { cursor:pointer; border-radius:3px; padding:0 .1rem;
   transition:background .12s; }
 .ph-ph:hover { background:#242932; }
@@ -769,6 +774,18 @@ ph_js <- "
     if (spans) clearMarks(spans);
   }, true);
 
+  // Clicking a speaker chip asks who it was. One delegated handler and one
+  // input, rather than a control per phrase: a sitting can hold hundreds.
+  document.addEventListener('click', function(e){
+    var c = e.target.closest ? e.target.closest('.ph-spk') : null;
+    if (!c) return;
+    var tx = c.closest('.ph-tx');
+    if (!tx) return;
+    e.stopPropagation();
+    send('speaker_pick', {rel: tx.dataset.rel, visit: Number(tx.dataset.visit),
+                          start: Number(c.dataset.t0)});
+  });
+
   // Clicking a phrase plays from where it was said.
   document.addEventListener('click', function(e){
     var s = e.target.closest ? e.target.closest('.ph-ph') : null;
@@ -1055,6 +1072,8 @@ server <- function(input, output, session) {
     ending = FALSE,          # End sitting pressed, waiting for visits to drain
     tick = 0L,
     quitting = FALSE,        # Quit pressed, waiting for visits to drain
+    speaker_at = NULL,       # the phrase whose speaker is being named
+    told_tuneR = FALSE,      # the missing-package notice, said once
     tags_for = NULL,         # photograph the tag fields currently hold
     tags_seeded = NULL,      # what was put in them, to tell an edit from that
     playing = FALSE
@@ -1616,6 +1635,111 @@ server <- function(input, output, session) {
       actionButton("play", "Play", class = "btn-sm btn-primary"))
   })
 
+  # ---- who spoke -----------------------------------------------------------
+  # Names offered are the ones already used in this photograph's sitting, plus
+  # everyone tagged anywhere in the project: the people in a photograph and the
+  # people discussing it overlap heavily in a family without being the same set.
+  speaker_names <- function(rel_path, visit) {
+    used <- ph_speakers_names(cfg, ph_visit_session(cfg, rel_path, visit))
+    sort(unique(c(used, ph_known_people(cfg))))
+  }
+
+  observeEvent(input$speaker_pick, {
+    pick <- input$speaker_pick
+    rv$speaker_at <- pick
+    now <- ph_speakers_read(cfg, pick$rel, as.integer(pick$visit))
+    i <- which(abs(now$start - as.numeric(pick$start)) < 0.01)
+    showModal(modalDialog(
+      title = "Who said this?",
+      selectizeInput("speaker_name", NULL,
+                     choices = speaker_names(pick$rel, as.integer(pick$visit)),
+                     selected = if (length(i)) now$speaker[i[1]] else "",
+                     options = list(create = TRUE, persist = FALSE,
+                                    placeholder = "a name, or type a new one")),
+      div(class = "small text-secondary",
+          if (requireNamespace("tuneR", quietly = TRUE)) {
+            "Naming a phrase yourself is what the rest are worked out from."
+          } else {
+            HTML(paste("Names are saved, but spreading them needs the tuneR",
+                       "package: <code>install.packages(\"tuneR\")</code>."))
+          }),
+      footer = tagList(
+        modalButton("Cancel"),
+        actionButton("speaker_clear", "No name",
+                     class = "btn-sm btn-outline-secondary"),
+        actionButton("speaker_save", "Save", class = "btn-sm btn-primary"))))
+  })
+
+  save_speaker <- function(name) {
+    at <- rv$speaker_at
+    if (is.null(at)) return(invisible(NULL))
+    removeModal()
+    ph_speaker_label(cfg, at$rel, as.integer(at$visit),
+                     start = as.numeric(at$start), speaker = name)
+    rv$speaker_at <- NULL
+    spread_speakers(at$rel, as.integer(at$visit))
+    rv$tick <- rv$tick + 1L
+    invisible(NULL)
+  }
+
+  # Naming one phrase re-works the whole sitting, so the names appear on the
+  # other photographs while you are still labelling. Recordings are decoded
+  # once per session and kept, so this costs about a second the first time and
+  # very little afterwards.
+  #
+  # Silent when it cannot help: tuneR is only suggested, and most machines will
+  # not have it. Clicking a chip must save the label and never raise.
+  spread_speakers <- function(rel_path, visit) {
+    # Never raising and saying nothing are different things, and this used to
+    # do the second: the label saved, nothing spread, and there was no way to
+    # find out why. Said once a session rather than on every chip.
+    if (!requireNamespace("tuneR", quietly = TRUE)) {
+      if (!isTRUE(rv$told_tuneR)) {
+        rv$told_tuneR <- TRUE
+        showNotification(
+          HTML(paste("Names are saved, but spreading them to the other",
+                     "photographs needs the tuneR package.<br>",
+                     "<code>install.packages(\"tuneR\")</code>, then start",
+                     "phostor again.")),
+          type = "warning", duration = 12)
+      }
+      return(invisible(NULL))
+    }
+    # A visit outside any sitting: nothing useful to say about it.
+    sess <- ph_visit_session(cfg, rel_path, visit)
+    if (is.null(sess)) return(invisible(NULL))
+    res <- tryCatch({
+      out <- ph_speakers_apply(cfg, sess, quiet = TRUE)
+      list(named = if (is.null(out)) 0L else nrow(out),
+           chk = ph_speakers_check(cfg, sess, quiet = TRUE))
+    }, error = function(e) NULL)
+    # The state right after the very first name: one voice is nothing to choose
+    # between, and silence here reads as failure too.
+    if (is.null(res) || is.null(res$chk)) {
+      showNotification(
+        "Saved. Name a phrase for a second voice and the rest will follow.",
+        duration = 8)
+      return(invisible(NULL))
+    }
+    # Until every voice has two examples, leaving one out leaves nothing to
+    # recognise it by and the figure says nothing. Ask for more rather than
+    # reporting a score that looks like failure.
+    showNotification(
+      if (isTRUE(res$chk$thin)) {
+        sprintf("%d named. Name two phrases for each voice before the count means anything.",
+                res$named)
+      } else {
+        sprintf("%d named. On the phrases you named yourself it gets %d of %d right.",
+                res$named, res$chk$correct, res$chk$n)
+      },
+      type = if (!isTRUE(res$chk$thin) && isTRUE(res$chk$accuracy < 0.8))
+               "warning" else "message",
+      duration = 6)
+    invisible(NULL)
+  }
+  observeEvent(input$speaker_save, save_speaker(input$speaker_name %||% ""))
+  observeEvent(input$speaker_clear, save_speaker(""))
+
   # ---- quitting ------------------------------------------------------------
   observeEvent(input$quit, {
     running <- !is.null(rv$session_dir)
@@ -1671,11 +1795,21 @@ server <- function(input, output, session) {
   transcript_html <- function(rel_path, visit) {
     timed <- ph_transcript_timed(cfg, rel_path, visit)
     if (nrow(timed)) {
-      # data-t0/data-t1 are what the follow-along reads; see phrasesFor().
+      spk <- ph_speakers_read(cfg, rel_path, visit)
+      j <- match(round(timed$start, 2), round(spk$start, 2))
+      name <- ifelse(is.na(j), "", spk$speaker[j])
+      # A guess is dimmed; a person's answer is not. The chip sits outside the
+      # phrase span so clicking it names the speaker rather than seeking the
+      # audio, which is what clicking the words does.
+      chip <- sprintf(
+        "<span class=\"ph-spk%s\" data-t0=\"%.3f\">%s</span>",
+        ifelse(!is.na(j) & spk$source[j] %in% "auto", " guess", ""),
+        timed$start, ph_escape(ifelse(nzchar(name), name, "+")))
       return(div(class = "ph-tx", id = sprintf("ph-tx-%d", visit),
-                 HTML(paste(sprintf(
+                 `data-rel` = rel_path, `data-visit` = as.integer(visit),
+                 HTML(paste(paste0(chip, sprintf(
                    "<span class=\"ph-ph\" data-t0=\"%.3f\" data-t1=\"%.3f\">%s</span>",
-                   timed$start, timed$end, ph_escape(timed$text)),
+                   timed$start, timed$end, ph_escape(timed$text))),
                    collapse = " "))))
     }
     # No timings: a transcript written before they existed, or a container the
