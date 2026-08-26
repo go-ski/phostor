@@ -4,12 +4,15 @@
 \alias{ph_tree_html}
 \title{Render the folder tree as one HTML string.}
 \usage{
-ph_tree_html(idx, counts = NULL, open_depth = 1L)
+ph_tree_html(idx, counts = NULL, thumbs = NULL, open_depth = 1L)
 }
 \arguments{
 \item{idx}{A catalogue from \code{\link[=ph_read_index]{ph_read_index()}}.}
 
 \item{counts}{Optional integer vector of visit counts, parallel to \code{idx}.}
+
+\item{thumbs}{Optional character vector of thumbnail URLs, parallel to
+\code{idx}. Rows with \code{NA} or \code{""} get no \verb{<img>}.}
 
 \item{open_depth}{Directories at or above this depth start open. \code{0} opens
 only the root level; \code{Inf} opens everything.}
@@ -23,8 +26,10 @@ rows carrying their id, their name and a badge showing how many visits they
 already have.
 }
 \details{
-Thumbnails are referenced at \verb{thumbs/<id>.jpg}, which the app serves with
-\code{\link[shiny:addResourcePath]{shiny::addResourcePath()}}.
+Thumbnails are referenced under the \verb{thumbs/} prefix the app serves with
+\code{\link[shiny:addResourcePath]{shiny::addResourcePath()}}. Their URLs are passed in rather than built here:
+a render is named after its photograph and its size (see \code{\link[=ph_render_rel]{ph_render_rel()}}),
+which this function has no config to work out.
 }
 \examples{
 idx <- data.frame(id = 1:2, rel_path = c("a/x.jpg", "b.jpg"),

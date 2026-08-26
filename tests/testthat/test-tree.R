@@ -57,10 +57,23 @@ test_that("an empty catalogue renders a message, not broken markup", {
   expect_false(grepl("<details", h, fixed = TRUE))
 })
 
-test_that("thumbnails are referenced by id and load lazily", {
-  h <- ph_tree_html(mini())
-  expect_match(h, "src=\"thumbs/1\\.jpg\"")
+test_that("thumbnails are the URLs given, and load lazily", {
+  idx <- mini()
+  urls <- paste0("256/", idx$rel_path, ".jpg?v=1")
+  h <- ph_tree_html(idx, thumbs = urls)
+  # Passed in rather than built from the id: a render is named after its
+  # photograph and its size, which this function has no config to work out.
+  expect_match(h, 'src="256/Trips/Skye/b.jpg.jpg?v=1"', fixed = TRUE)
   expect_equal(lengths(regmatches(h, gregexpr("loading=\"lazy\"", h))), 5L)
+  # The URLs follow the rows when the tree sorts them.
+  expect_match(h, 'src="256/top.jpg.jpg?v=1"', fixed = TRUE)
+})
+
+test_that("a row with no thumbnail still renders", {
+  # Nothing rendered yet, or a render that failed: the row is still clickable.
+  h <- ph_tree_html(mini())
+  expect_false(grepl("<img", h, fixed = TRUE))
+  expect_match(h, "ph-p-1")
 })
 
 test_that("URL paths encode each segment but keep the separators", {

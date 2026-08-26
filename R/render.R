@@ -7,6 +7,27 @@
 #
 # No LRU cache: bounding one earns its keep at tens of thousands of files; at
 # this size it is not worth the complexity.
+#
+# A render is named after the photograph it was made from, under the size it
+# was made at:
+#
+#   display/4096/Trips/Skye/img_0421.jpg.jpg
+#   thumbs/256/Trips/Skye/img_0421.jpg.jpg
+#
+# The mirror is the same idea as sidecars/: a render is findable from its path
+# without phostor. It was once display/<id>.jpg, which named a position in a
+# catalogue rather than a photograph -- so two collections in one work
+# directory served the same URLs for different pictures, and a browser that had
+# cached the first showed it for the second.
+#
+# The size is a path segment so that changing display_size is not something to
+# detect: the old renders are simply not where the app looks, and the URL a
+# browser might have cached is not one that is asked for any more.
+#
+# `.jpg` is appended rather than substituted. `IMG_1234.HEIC` becomes
+# `IMG_1234.HEIC.jpg`, which reads oddly but cannot collide: a folder holding
+# both `a.jpg` and `a.heic` -- ordinary straight off a phone, and both indexed
+# -- would otherwise render them onto each other.
 
 # Formats a browser renders from raw bytes. Anything else must be converted
 # first, so the display copy is always rendered whatever the source.
@@ -51,11 +72,71 @@ ph_render_one <- function(src, dest, size = 2048L, quality = 85L) {
   dest
 }
 
-# A render is current when it exists and is no older than its source. Comparing
-# against the source mtime rather than merely testing existence means an edited
-# photograph is picked up, and a re-run costs one stat() per file.
+#' Where a photograph's render lives, relative to its resource directory.
+#'
+#' The size, then the photograph's own path with `.jpg` appended:
+#' `"4096/Trips/Skye/img_0421.jpg.jpg"`. Exported because `inst/shiny/app.R`
+#' builds its image URLs from it, and `runApp()` sources that file with only
+#' `library(phostor)` attached.
+#'
+#' @param cfg A config list from [ph_config()].
+#' @param rel_path Path of the photograph relative to `photo_root`.
+#' @param kind `"display"` or `"thumb"`.
+#' @return A path relative to `display_dir` or `thumb_dir`.
+#' @examples
+#' \dontrun{
+#' ph_render_rel(ph_config(), "Trips/Skye/img_0421.jpg", "display")
+#' }
+#' @export
+ph_render_rel <- function(cfg, rel_path, kind = c("display", "thumb")) {
+  kind <- match.arg(kind)
+  size <- if (identical(kind, "display")) cfg$display_size else cfg$thumb_size
+  file.path(as.integer(size), paste0(rel_path, ".jpg"))
+}
+
+# The same, absolute. vipsthumbnail resolves a relative -o against the input
+# image's directory, so every destination handed to it must be absolute.
+ph_render_path <- function(cfg, rel_path, kind = c("display", "thumb")) {
+  kind <- match.arg(kind)
+  root <- if (identical(kind, "display")) cfg$display_dir else cfg$thumb_dir
+  file.path(root, ph_render_rel(cfg, rel_path, kind))
+}
+
+# A render is current when it exists and carries its source's timestamp, which
+# ph_render_all() stamps on after writing. An equality test rather than "no
+# older than": a photograph restored from a backup, or copied with `cp -p`,
+# arrives with a date that is not newer, and comparing with >= would skip it.
+# The tolerance is for filesystems that keep mtimes to two seconds.
 ph_render_current <- function(dest, src_mtime) {
-  file.exists(dest) && as.numeric(file.mtime(dest)) >= src_mtime
+  if (!file.exists(dest)) return(FALSE)
+  d <- abs(as.numeric(file.mtime(dest)) - as.numeric(src_mtime))
+  isTRUE(d < 2)
+}
+
+#' Renders left over from the old flat layout.
+#'
+#' phostor once named a render after the photograph's catalogue id rather than
+#' its path: `display/7.jpg`. Those files are not read any more, and nothing
+#' records what they were made from, so they are neither used nor deleted --
+#' [ph_status()] reports them and removing them is your call.
+#'
+#' @param config A work directory, a config path, or a config list.
+#' @return A character vector of paths, empty when there are none.
+#' @examples
+#' \dontrun{
+#' ph_render_orphans("~/phostor/family")
+#' }
+#' @export
+ph_render_orphans <- function(config = NULL) {
+  cfg <- ph_as_config(config)
+  dirs <- c(cfg$display_dir, cfg$thumb_dir)
+  dirs <- dirs[dir.exists(dirs)]
+  if (!length(dirs)) return(character(0))
+  # Only the top level, and only bare numbers: the current layout puts a size
+  # directory there instead, and everything else is somebody else's business.
+  unlist(lapply(dirs, function(d) {
+    list.files(d, pattern = "^[0-9]+\\.jpg$", full.names = TRUE)
+  }), use.names = FALSE)
 }
 
 #' Render display copies and thumbnails for the whole catalogue.
@@ -90,15 +171,21 @@ ph_render_all <- function(config = NULL, force = FALSE, quiet = FALSE) {
   display_dir <- normalizePath(cfg$display_dir, mustWork = TRUE)
   thumb_dir   <- normalizePath(cfg$thumb_dir, mustWork = TRUE)
 
+  # Absolute roots for the vipsthumbnail -o rule; the rest of each path comes
+  # from ph_render_rel(), so cfg carries the absolute form for both.
+  abs_cfg <- cfg
+  abs_cfg$display_dir <- display_dir
+  abs_cfg$thumb_dir <- thumb_dir
+
   rendered <- 0L; skipped <- 0L; failed <- character(0)
   pb <- ph_progress(nrow(idx), "rendering", quiet = quiet)
   on.exit(pb$done(), add = TRUE)
   for (i in seq_len(nrow(idx))) {
     src <- file.path(cfg$photo_root, idx$rel_path[i])
     jobs <- list(
-      list(dest = file.path(display_dir, paste0(idx$id[i], ".jpg")),
+      list(dest = ph_render_path(abs_cfg, idx$rel_path[i], "display"),
            size = cfg$display_size),
-      list(dest = file.path(thumb_dir, paste0(idx$id[i], ".jpg")),
+      list(dest = ph_render_path(abs_cfg, idx$rel_path[i], "thumb"),
            size = cfg$thumb_size)
     )
     for (j in jobs) {
@@ -110,8 +197,14 @@ ph_render_all <- function(config = NULL, force = FALSE, quiet = FALSE) {
         failed <- c(failed, idx$rel_path[i])
         next
       }
+      # The render mirrors the photo directory, so its parents may not exist.
+      dir.create(dirname(j$dest), recursive = TRUE, showWarnings = FALSE)
       out <- ph_render_one(src, j$dest, size = j$size)
       if (is.na(out)) failed <- c(failed, idx$rel_path[i]) else {
+        # The render carries its source's timestamp: that is what makes
+        # ph_render_current() an exact test, and what makes the browser see a
+        # new URL when a photograph is replaced. See the note there.
+        try(Sys.setFileTime(j$dest, idx$mtime[i]), silent = TRUE)
         rendered <- rendered + 1L
       }
     }

@@ -10,18 +10,12 @@ test('arrow keys step through the photographs', async ({ page }) => {
 
   await H.openPhoto(page, ids[0]);
   await page.keyboard.press('ArrowRight');
-  await page.waitForFunction(
-    (i) => document.getElementById('ph-photo').src.includes(`/display/${i}.jpg`),
-    ids[1]);
+  await H.showing(page, ids[1]);
   await page.keyboard.press('ArrowLeft');
-  await page.waitForFunction(
-    (i) => document.getElementById('ph-photo').src.includes(`/display/${i}.jpg`),
-    ids[0]);
+  await H.showing(page, ids[0]);
   // At the ends it stops rather than wrapping or erroring.
   await page.keyboard.press('ArrowLeft');
-  await page.waitForFunction(
-    (i) => document.getElementById('ph-photo').src.includes(`/display/${i}.jpg`),
-    ids[0]);
+  await H.showing(page, ids[0]);
 });
 
 test('s hides the sidebar for presentation', async ({ page }) => {
@@ -42,8 +36,7 @@ test('typing in a field does not steal the arrow keys', async ({ page }) => {
   await page.click('#place');
   await page.keyboard.type('Elgol');
   await page.keyboard.press('ArrowLeft');   // moves the cursor, not the photo
-  await expect(page.locator('#ph-photo'))
-    .toHaveAttribute('src', new RegExp(`display/${ids[1]}\\.jpg$`));
+  await H.showing(page, ids[1]);
   // Ends with what was typed. The field may also be seeded from an earlier
   // visit to this photograph, so asserting an exact value would race the
   // seeding.

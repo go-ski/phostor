@@ -65,9 +65,19 @@ ph_app <- function(config = NULL, port = 7655L,
   }
 
   cfg <- ph_as_config(config, require_photos = TRUE)
-  if (!nrow(ph_read_index(cfg))) {
+  idx <- ph_read_index(cfg)
+  if (!nrow(idx)) {
     stop("phostor: no catalogue yet. Run ph_index() and ph_render_all(), ",
          "or ph_go() to do both and launch.", call. = FALSE)
+  }
+  # Renders live under the size they were made at, so changing display_size --
+  # or upgrading from the version that named them after catalogue ids -- leaves
+  # nothing where the app looks. Without this the app starts and shows a page
+  # of broken images, saying nothing about why.
+  if (!file.exists(ph_render_path(cfg, idx$rel_path[1], "display"))) {
+    stop("phostor: nothing rendered at display_size ", cfg$display_size,
+         ". Run ph_render_all(), or ph_go() to render and launch.",
+         call. = FALSE)
   }
   # The resolved snapshot lives in work_dir, so it survives the app session.
   # runApp() chdirs, hence absolute paths.
@@ -125,6 +135,7 @@ ph_status <- function(config = NULL) {
                       recursive = TRUE))
   } else 0L
   orphans <- length(ph_orphan_audio(cfg))
+  old_renders <- ph_render_orphans(cfg)
   people <- ph_known_people(cfg)
   waiting <- ph_untranscribed(cfg)
 
@@ -145,9 +156,17 @@ ph_status <- function(config = NULL) {
     message("  interrupted: ", orphans, " .part file(s) -- audio from a ",
             "visit that did not close; playable, and not deleted by phostor")
   }
+  if (length(old_renders)) {
+    mb <- sum(file.size(old_renders), na.rm = TRUE) / 1024^2
+    message(sprintf(
+      "  old renders: %d file(s), %.0f MB -- named after catalogue ids by an %s",
+      length(old_renders), mb, "earlier version"))
+    message("               unused and not deleted by phostor; ",
+            "remove them when you like")
+  }
   invisible(list(photos = nrow(idx), sittings = nrow(sess), visits = sidecars,
                  people = length(people), orphans = orphans,
-                 untranscribed = waiting))
+                 untranscribed = waiting, old_renders = length(old_renders)))
 }
 
 # ---------------------------------------------------------------------------

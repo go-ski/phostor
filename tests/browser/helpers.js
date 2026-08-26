@@ -175,13 +175,18 @@ async function openPhoto(page, id) {
     while (p) { if (p.tagName === 'DETAILS') p.open = true; p = p.parentElement; }
   }, id);
   await page.click(`#ph-p-${id}`);
+  await showing(page, id);
+}
+
+// Wait until a photograph is the one on screen. Asks the app which it is
+// rather than reading the image URL: a render is named after its photograph
+// and its size, so the catalogue id does not appear in the URL at all.
+async function showing(page, id) {
   await page.waitForFunction(
-    (i) => document.getElementById('ph-photo').src.includes(`/display/${i}.jpg`),
-    id
-  );
+    (i) => window.PH && window.PH.current === i, id, { timeout: 15000 });
 }
 
 module.exports = { WORK, PHOTOS, sidecars, visitFiles, audioFiles, AUDIO_EXTS,
                    pathRows, expectValidAudio, micState, waitForVisitChunks, indexIds,
-                   photoIds, openPhoto, sessionCount, recordShortSitting,
+                   photoIds, openPhoto, showing, sessionCount, recordShortSitting,
                    bytesProduced, bytesStored };

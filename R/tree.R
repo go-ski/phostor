@@ -81,11 +81,15 @@ ph_visit_counts <- function(cfg, rel_paths) {
 #' rows carrying their id, their name and a badge showing how many visits they
 #' already have.
 #'
-#' Thumbnails are referenced at `thumbs/<id>.jpg`, which the app serves with
-#' [shiny::addResourcePath()].
+#' Thumbnails are referenced under the `thumbs/` prefix the app serves with
+#' [shiny::addResourcePath()]. Their URLs are passed in rather than built here:
+#' a render is named after its photograph and its size (see [ph_render_rel()]),
+#' which this function has no config to work out.
 #'
 #' @param idx A catalogue from [ph_read_index()].
 #' @param counts Optional integer vector of visit counts, parallel to `idx`.
+#' @param thumbs Optional character vector of thumbnail URLs, parallel to
+#'   `idx`. Rows with `NA` or `""` get no `<img>`.
 #' @param open_depth Directories at or above this depth start open. `0` opens
 #'   only the root level; `Inf` opens everything.
 #' @return A length-one character vector of HTML.
@@ -95,7 +99,7 @@ ph_visit_counts <- function(cfg, rel_paths) {
 #'                   stringsAsFactors = FALSE)
 #' substr(ph_tree_html(idx), 1, 40)
 #' @export
-ph_tree_html <- function(idx, counts = NULL, open_depth = 1L) {
+ph_tree_html <- function(idx, counts = NULL, thumbs = NULL, open_depth = 1L) {
   if (!nrow(idx)) {
     return("<p class=\"ph-empty\">No photographs indexed yet.</p>")
   }
@@ -104,6 +108,7 @@ ph_tree_html <- function(idx, counts = NULL, open_depth = 1L) {
   ord <- order(idx$rel_path, method = "radix")
   idx <- idx[ord, , drop = FALSE]
   if (!is.null(counts)) counts <- counts[ord] else counts <- rep(0L, nrow(idx))
+  if (!is.null(thumbs)) thumbs <- thumbs[ord] else thumbs <- rep(NA_character_, nrow(idx))
 
   segs <- strsplit(ifelse(is.na(idx$dir), "", idx$dir), "/", fixed = TRUE)
   segs <- lapply(segs, function(s) s[nzchar(s)])
@@ -134,8 +139,10 @@ ph_tree_html <- function(idx, counts = NULL, open_depth = 1L) {
       ",{priority: &#39;event&#39;})\">",
       # loading="lazy": otherwise every thumbnail is fetched when the tree
       # first paints.
-      "<img class=\"ph-t\" loading=\"lazy\" alt=\"\" src=\"thumbs/", id,
-      ".jpg\">",
+      if (!is.na(thumbs[i]) && nzchar(thumbs[i])) {
+        paste0("<img class=\"ph-t\" loading=\"lazy\" alt=\"\" src=\"",
+               ph_escape(thumbs[i]), "\">")
+      } else "",
       "<span class=\"ph-n\">", ph_escape(idx$name[i]), "</span>",
       if (nvis > 0L) paste0("<span class=\"ph-b\">", nvis, "</span>") else "",
       "</div>"))

@@ -142,8 +142,10 @@ it: the app goes on listening.
   config.resolved.yml   snapshot written by every command (provenance)
   config.history/       prior config.yml, saved by ph_init(overwrite = TRUE)
   index.tsv             the catalogue: id, rel_path, capture date, dimensions
-  display/<id>.jpg      pre-rendered display copies
-  thumbs/<id>.jpg       pre-rendered tree thumbnails
+  display/4096/         pre-rendered display copies, under the size made at
+    Trips/Skye/img_0421.jpg.jpg
+  thumbs/256/           pre-rendered tree thumbnails, likewise
+    Trips/Skye/img_0421.jpg.jpg
   sessions/
     2026-08-23-1930/
       session.yml       title, when it started, which photographs
@@ -163,6 +165,21 @@ The sidecar tree mirrors the photo directory path for path, and each
 photograph gets a directory named after its file. This keeps a photograph's
 record findable from its path without phostor, and keeps all visits to one
 photograph in one place.
+
+`display/` and `thumbs/` mirror it too, under the size they were made at. The
+size in the path means changing `display_size` is not something phostor has to
+notice: the old copies are simply not where the app looks, and the browser is
+asked for a URL it cannot have cached. `.jpg` is appended rather than
+substituted -- `IMG_1234.HEIC` becomes `IMG_1234.HEIC.jpg` -- so a folder
+holding both `a.jpg` and `a.heic` renders them to two different files.
+
+Two photographs whose names differ only in case (`A.JPG` and `a.jpg`) share a
+directory entry on a case-insensitive filesystem such as APFS, and so share a
+render and a sidecar. Rename one if you have such a pair.
+
+Renders are stamped with their photograph's modification date, so replacing a
+photograph is picked up even when the replacement is older -- restoring from a
+backup, or copying with `cp -p`.
 
 Visit numbers are per photograph and are not reused. Deleting visit 2 of 3
 leaves the next visit as number 4, so no sidecar overwrites another.

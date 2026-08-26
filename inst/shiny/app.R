@@ -1037,6 +1037,21 @@ server <- function(input, output, session) {
     tryCatch(session$sendCustomMessage(type, msg), error = function(e) NULL)
   }
 
+  # A render is named after its photograph and its size, and carries that
+  # photograph's timestamp. The mtime rides along as ?v= so that replacing a
+  # photograph in place changes the URL: without it the browser is handed a
+  # Last-Modified from the original scan, which may be years old, and given no
+  # Cache-Control it would treat the old copy as fresh for a very long time.
+  render_url <- function(rel_path, kind) {
+    rel <- ph_render_rel(cfg, rel_path, kind)
+    abs <- file.path(if (identical(kind, "display")) cfg$display_dir
+                     else cfg$thumb_dir, rel)
+    v <- suppressWarnings(as.numeric(file.mtime(abs)))
+    paste0(kind_prefix(kind), "/", ph_url_path(rel),
+           if (is.na(v)) "" else paste0("?v=", format(round(v), scientific = FALSE)))
+  }
+  kind_prefix <- function(kind) if (identical(kind, "display")) "display" else "thumbs"
+
   row_of <- function(id) {
     if (is.null(id)) return(NULL)
     i <- match(as.integer(id), as.integer(rv$idx$id))
@@ -1049,7 +1064,9 @@ server <- function(input, output, session) {
   # client-side by ph_badge.
   output$tree <- renderUI({
     counts <- ph_visit_counts(cfg, rv$idx$rel_path)
-    HTML(ph_tree_html(rv$idx, counts = counts))
+    thumbs <- vapply(rv$idx$rel_path, render_url, character(1), "thumb",
+                     USE.NAMES = FALSE)
+    HTML(ph_tree_html(rv$idx, counts = counts, thumbs = thumbs))
   })
 
   # onFlushed() runs outside a reactive context, where reading rv$... raises
@@ -1086,7 +1103,7 @@ server <- function(input, output, session) {
     rv$current <- as.integer(id)
     tell("ph_show", list(
       id = as.integer(id),
-      src = sprintf("display/%d.jpg", as.integer(id)),
+      src = render_url(r$rel_path, "display"),
       caption = caption_html(r)))
     seed_fields(r$rel_path)
     invisible(NULL)
@@ -1694,7 +1711,7 @@ server <- function(input, output, session) {
     items <- lapply(seq_len(nrow(pl)), function(i) {
       r <- row_of(pl$id[i])
       list(id = as.integer(pl$id[i]),
-           src = sprintf("display/%d.jpg", as.integer(pl$id[i])),
+           src = render_url(pl$rel_path[i], "display"),
            caption = caption_html(r),
            duration = if (is.na(pl$duration[i])) 3 else pl$duration[i],
            audio = if (is.na(pl$audio[i])) NULL else

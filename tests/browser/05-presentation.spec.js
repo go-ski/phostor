@@ -87,9 +87,7 @@ test('up and down move through the photographs like left and right', async ({ pa
   await H.openPhoto(page, ids[0]);
   await page.click('.ph-img-wrap');
 
-  const shows = (i) => page.waitForFunction(
-    (n) => document.getElementById('ph-photo').src.includes(`/display/${n}.jpg`),
-    ids[i]);
+  const shows = (i) => H.showing(page, ids[i]);
 
   await page.keyboard.press('ArrowDown');
   await shows(1);
@@ -120,9 +118,7 @@ test('up and down move in presentation too', async ({ page }) => {
   await page.keyboard.press('s');
   await expect(body(page)).toHaveClass(/ph-present/);
   await page.keyboard.press('ArrowDown');
-  await page.waitForFunction(
-    (n) => document.getElementById('ph-photo').src.includes(`/display/${n}.jpg`),
-    ids[1]);
+  await H.showing(page, ids[1]);
   await page.keyboard.press('Escape');
 });
 
