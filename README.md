@@ -109,12 +109,13 @@ phostor go   --work ~/phostor/family
    that recording has started. A red **REC** badge stays on screen while the
    microphone is live. If the microphone does not open, the app reports why and
    offers **Try the microphone again**.
-2. **Show photographs.** Click the tree, or use `←` and `→`. `b` folds away
-   the fields and visits under the photograph, so it takes the height; `s`
-   enters presentation mode, which leaves nothing but the photograph and the
-   recording indicator; `f` goes full screen. `s` or **Esc** leaves
-   presentation, and the app says so on screen as you go in. In full screen the
-   first Esc leaves that, so it takes a second one to leave presentation.
+2. **Show photographs.** Click the tree, or use `←` `→` `↑` `↓` — all four
+   move to the previous or next photograph, so it does not matter which your
+   hand reaches for. `b` folds away the fields and visits under the photograph,
+   so it takes the height. `s` is presentation mode: full screen on the
+   display, with the browser's own chrome, the menu bar and the Dock gone, and
+   nothing left but the photograph and the recording indicator. `s` or **Esc**
+   leaves, and the app says so on screen as you go in.
 3. **Talk.** Recording follows the photographs on its own.
 4. **Add what was established.** Names go in as chips, with autocomplete from
    every name used earlier in the project. Place, event and a date guess are
@@ -386,7 +387,7 @@ transcriber finishes with it.
 
 A recording with no timings shows its prose as one block, and one the
 transcriber could never read shows just its player. Press `b` to fold the
-panel away and give the photograph the height, or `s` to hide everything for
+panel away and give the photograph the height, or `s` for full-screen
 presentation.
 
 ## Read-only guarantee

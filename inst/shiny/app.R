@@ -118,6 +118,14 @@ body.ph-present .ph-tags, body.ph-present .ph-hist-wrap,
 body.ph-present .ph-hide { display:none !important; }
 body.ph-present .ph-img-wrap { border-radius:0; }
 body.ph-present { overflow:hidden; }
+/* Hiding the sidebar leaves its grid column behind -- 340px of nothing down
+   the left. bslib collapses to `0 minmax(0,1fr)` for its own closed state; the
+   same is done here without its padding, which would inset the photograph. */
+body.ph-present .bslib-sidebar-layout {
+  grid-template-columns: 0 minmax(0, 1fr) !important; }
+body.ph-present .bslib-sidebar-layout > .main { padding:0 !important; }
+body.ph-present .bslib-sidebar-layout > .collapse-toggle {
+  display:none !important; }
 
 /* b: fold away what is under the photograph, keeping everything else. The
    caption stays, as it does in presentation mode -- a photograph on screen
@@ -583,10 +591,33 @@ ph_js <- "
   // entering by the button and leaving by the key left them disagreeing, and
   // the button then did nothing until it was clicked twice.
   function inPresent(){ return document.body.classList.contains('ph-present'); }
+  // Presentation and full screen are one mode. requestFullscreen() takes the
+  // whole display -- browser chrome, tabs, menu bar and Dock -- and needs a
+  // user gesture, which is why the Presentation button is wired here on the
+  // client rather than going through the server and coming back.
+  //
+  // If the browser refuses, presentation still happens, just in a window: the
+  // rejection is caught rather than allowed to stop the mode from opening.
   function setPresent(on){
     document.body.classList.toggle('ph-present', !!on);
-    if (on) showPresentHint();
+    if (on) {
+      showPresentHint();
+      var d = document.documentElement;
+      if (d.requestFullscreen && !document.fullscreenElement) {
+        var p = d.requestFullscreen();
+        if (p && p.catch) p.catch(function(){});
+      }
+    } else if (document.fullscreenElement && document.exitFullscreen) {
+      var q = document.exitFullscreen();
+      if (q && q.catch) q.catch(function(){});
+    }
   }
+  // Escape, and the browser's own full-screen control, leave full screen
+  // without telling the page. Presentation follows it out, so one Escape
+  // leaves the whole mode rather than stranding half of it.
+  document.addEventListener('fullscreenchange', function(){
+    if (!document.fullscreenElement && inPresent()) setPresent(false);
+  });
   function showPresentHint(){
     var h = el('ph-present-hint');
     if (!h) return;
@@ -721,14 +752,18 @@ ph_js <- "
   });
 
   // ---- keyboard ----------------------------------------------------------
+  var PH_STEP = {ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1};
   document.addEventListener('keydown', function(e){
     var t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' ||
               t.isContentEditable)) return;
-    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    // Up and down do what left and right do. In presentation there is no tree
+    // to click, so it matters which key the hand reaches for, not which
+    // direction the collection is drawn in.
+    if (e.key in PH_STEP) {
       if (!PH.order.length) return;
       var i = PH.order.indexOf(PH.current);
-      var n = i < 0 ? 0 : i + (e.key === 'ArrowRight' ? 1 : -1);
+      var n = i < 0 ? 0 : i + PH_STEP[e.key];
       if (n < 0 || n >= PH.order.length) return;
       e.preventDefault();
       send('photo_pick', PH.order[n]);
@@ -737,12 +772,10 @@ ph_js <- "
     } else if (e.key === 'b') {
       document.body.classList.toggle('ph-nobottom');
     } else if (e.key === 'Escape') {
-      // Leaves, never enters. In browser full screen the first Escape is taken
-      // by the browser to leave that, so it takes a second one to get here.
+      // Leaves, never enters. In full screen the browser takes Escape for
+      // itself and fullscreenchange brings presentation out; this is the path
+      // when full screen was refused and the mode is running in a window.
       if (inPresent()) { e.preventDefault(); setPresent(false); }
-    } else if (e.key === 'f') {
-      if (document.fullscreenElement) document.exitFullscreen();
-      else document.documentElement.requestFullscreen();
     }
   });
 
@@ -793,6 +826,7 @@ ph_js <- "
     // Buttons inside the check panel are plain HTML, not Shiny inputs, so the
     // panel works while the server is busy.
     var wire = function(id, fn){ var b = el(id); if (b) b.onclick = fn; };
+    wire('present', function(){ setPresent(!inPresent()); });
     wire('ph-mic-run', runCheck);
     wire('ph-mic-test', testRecord);
     wire('ph-mic-close', closeCheck);
@@ -862,9 +896,6 @@ ph_js <- "
     $(document).on('shiny:updateinput', function(){
       setTimeout(checkSeeded, 0);
     });
-    Shiny.addCustomMessageHandler('ph_present', function(m){
-      setPresent(!inPresent());
-    });
     Shiny.addCustomMessageHandler('ph_quit', function(m){
       // Says what happened, rather than leaving Shiny's disconnect grey to
       // imply something went wrong. data-ph-quit is what the tests wait on.
@@ -886,16 +917,20 @@ ui <- page_sidebar(
   sidebar = sidebar(
     width = 340,
     div(class = "d-flex gap-1 mb-1",
-        actionButton("present", "Presentation",
-                     class = "btn-sm btn-outline-secondary w-100"),
+        # Plain HTML, not an actionButton: full screen has to be asked for
+        # inside the click that wants it, and a Shiny round trip is not that.
+        # The microphone panel's buttons are client-wired for the same kind of
+        # reason. See setPresent().
+        tags$button(id = "present", type = "button",
+                    class = "btn btn-sm btn-outline-secondary w-100",
+                    "Presentation"),
         actionButton("quit", "Quit", class = "btn-sm btn-outline-danger")),
     uiOutput("tree"),
     div(class = "mt-2 pt-2 border-top small text-secondary",
         # Non-breaking, so the narrow sidebar wraps at a separator rather
         # than in the middle of "full screen".
-        HTML(paste("&larr;&nbsp;&rarr; move &middot; <b>s</b>&nbsp;presentation",
-                   "&middot; <b>b</b>&nbsp;bottom &middot;",
-                   "<b>f</b>&nbsp;full&nbsp;screen",
+        HTML(paste("&larr;&nbsp;&rarr;&nbsp;&uarr;&nbsp;&darr; move &middot;",
+                   "<b>s</b>&nbsp;presentation &middot; <b>b</b>&nbsp;bottom",
                    "<br><b>Esc</b> leaves presentation")))
   ),
   div(
@@ -1528,9 +1563,6 @@ server <- function(input, output, session) {
                       width = "100%")),
       actionButton("play", "Play", class = "btn-sm btn-primary"))
   })
-
-  # No state here: the client holds it. See the note by setPresent().
-  observeEvent(input$present, tell("ph_present", list()))
 
   # ---- quitting ------------------------------------------------------------
   observeEvent(input$quit, {
