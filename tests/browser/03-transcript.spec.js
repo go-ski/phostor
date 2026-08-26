@@ -132,3 +132,106 @@ test('clicking a phrase seeks the recording to it', async ({ page }) => {
     (v) => document.getElementById('ph-a-' + v).currentTime, visit);
   expect(at).toBeCloseTo(PHRASES[2].t0, 3);
 });
+
+// Plant a distinct transcript on every recorded visit, so the panel's text
+// says which photograph it belongs to.
+function plantAll() {
+  const out = [];
+  for (const yml of H.visitFiles('.yml')) {
+    const dir = path.dirname(yml);
+    const stem = path.basename(yml, '.yml');
+    const rel = path.relative(H.sidecars(), dir).split(path.sep).join('/');
+    const visit = parseInt(stem.replace('visit-', ''), 10);
+    const id = H.indexIds()[rel];
+    if (id === undefined) continue;
+    const words = `spoken about photograph ${id} visit ${visit}`;
+    fs.writeFileSync(path.join(dir, `${stem}.tsv`),
+      ['start\tend\ttext',
+       `0.000\t1.500\t${words}`,
+       `1.500\t600.000\tand then a great deal more about photograph ${id}`,
+      ].join('\n') + '\n');
+    fs.writeFileSync(path.join(dir, `${stem}.txt`), words + '\n');
+    out.push({ id, visit, words });
+  }
+  return out;
+}
+
+test('the panel follows the playback instead of staying behind', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  if (H.sessionCount() === 0) await H.recordShortSitting(page);
+  const planted = plantAll();
+  expect(planted.length, 'nothing recorded to play back').toBeGreaterThan(1);
+
+  await page.reload();
+  await page.waitForSelector('#play');
+
+  // Start somewhere that is not where the playback begins, which is the shape
+  // of the bug: the panel used to stay on this one for the whole playback.
+  const elsewhere = planted[planted.length - 1].id;
+  await H.openPhoto(page, elsewhere);
+
+  await page.click('#play');
+  await page.waitForSelector('#play_stop');
+
+  // Read in one evaluation: the playback advances on its own, so asking for
+  // the photograph and the panel separately can straddle a change. And it has
+  // to be a photograph other than the one we started on -- the playlist comes
+  // back to that one, where a panel that never followed agrees by accident.
+  // Both of those made an earlier version of this test pass against the bug.
+  await expect.poll(() => page.evaluate((was) => {
+    const panel = document.querySelector('.ph-hist');
+    if (!panel) return 'no panel';
+    const now = window.PH.current;
+    if (now === was) return 'still on the starting photograph';
+    return panel.dataset.photo === String(now)
+      ? 'followed' : `panel is ${panel.dataset.photo}, playing ${now}`;
+  }, elsewhere), { timeout: 30000 }).toBe('followed');
+
+  // And it is really that photograph's words, not just its number.
+  const state = await page.evaluate(() => ({
+    id: window.PH.current,
+    text: document.querySelector('.ph-hist').innerText,
+  }));
+  expect(state.text).toContain(`photograph ${state.id} `);
+
+  if (await page.locator('#play_stop').count()) await page.click('#play_stop');
+});
+
+test('the words light up while the sitting plays back', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  if (H.sessionCount() === 0) await H.recordShortSitting(page);
+  const planted = plantAll();
+
+  await page.reload();
+  await page.waitForSelector('#play');
+  // Start away from where the playback begins, and only look once it has moved
+  // on. Otherwise the panel is the playing photograph's by coincidence and the
+  // highlight would appear whether or not the panel ever followed.
+  const elsewhere = planted[planted.length - 1].id;
+  await H.openPhoto(page, elsewhere);
+
+  await page.click('#play');
+  await page.waitForSelector('#play_stop');
+  await page.waitForFunction((was) => window.PH.current !== was, elsewhere,
+                             { timeout: 30000 });
+
+  // The playback audio is detached from the document, so this is the path that
+  // does not go through the delegated timeupdate listener.
+  //
+  // One evaluation again: a phrase lit in a panel belonging to some other
+  // photograph is exactly the bug, so the two have to be read together.
+  await expect.poll(() => page.evaluate((was) => {
+    const panel = document.querySelector('.ph-hist');
+    if (!panel) return 'no panel';
+    const now = window.PH.current;
+    if (now === was) return 'still on the starting photograph';
+    if (panel.dataset.photo !== String(now)) return 'panel has not followed';
+    return panel.querySelector('.ph-ph.on') ? 'lit' : 'nothing lit yet';
+  }, elsewhere), { timeout: 30000 }).toBe('lit');
+
+  if (await page.locator('#play_stop').count()) await page.click('#play_stop');
+  // Stopping takes the highlight with it.
+  await expect.poll(() => page.locator('.ph-ph.on').count()).toBe(0);
+});

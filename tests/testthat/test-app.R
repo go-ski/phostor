@@ -762,3 +762,74 @@ test_that("quitting with no sitting running writes nothing", {
   expect_equal(nrow(ph_sessions(p$cfg)), 0L)
   expect_equal(length(list.files(p$cfg$sidecar_dir, recursive = TRUE)), 0L)
 })
+
+test_that("the panel follows the playback rather than staying behind", {
+  # The reported bug: Play advanced the photograph and the sound, and the
+  # transcripts below stayed on whatever was on screen when it started.
+  p <- app_project()
+  idx <- ph_read_index(p$cfg)
+  ord <- ph_tree_order(idx)
+  rel_of <- function(id) idx$rel_path[match(id, idx$id)]
+  a <- ord[1]; b <- ord[2]
+
+  # Each photograph has a visit with a transcript of its own. Plain words: the
+  # panel escapes what it prints, and rel_paths here contain an ampersand.
+  says <- c("alpha speaking", "bravo speaking")
+  for (k in 1:2) {
+    rel <- rel_of(c(a, b)[k])
+    ph_write_sidecar(p$cfg, rel, 1L, list(started = "2026-08-26 09:00:00"))
+    writeLines(says[k], file.path(ph_visit_dir(p$cfg, rel), "visit-0001.txt"))
+  }
+
+  shiny::testServer(app_dir_for(p), {
+    session$setInputs(photo_pick = a)
+    expect_match(as.character(output$history$html), says[1], fixed = TRUE)
+
+    # Playback moves on; the client draws the photograph and says where it is.
+    session$setInputs(play_at = list(id = b, visit = 1L))
+    expect_equal(rv$current, as.integer(b))
+    got <- as.character(output$history$html)
+    expect_match(got, says[2], fixed = TRUE)
+    expect_false(grepl(says[1], got, fixed = TRUE))
+  })
+})
+
+test_that("playback opens no visit, even mid-sitting", {
+  p <- app_project(min_visit_seconds = 0)
+  idx <- ph_read_index(p$cfg)
+  ord <- ph_tree_order(idx)
+  rel_of <- function(id) idx$rel_path[match(id, idx$id)]
+  a <- ord[1]; b <- ord[2]
+
+  shiny::testServer(app_dir_for(p), {
+    session$setInputs(photo_pick = a)
+    session$setInputs(start = 1)
+    session$setInputs(mic_ready = list(ok = FALSE, why = "test"))
+    # Starting the sitting opened a visit for the photograph on screen.
+    expect_equal(rv$visit$rel_path, rel_of(a))
+
+    # Watching a sitting back is not recording one: the playback must not open
+    # a visit for the photographs it passes through.
+    session$setInputs(play_at = list(id = b, visit = 1L))
+    expect_equal(rv$visit$rel_path, rel_of(a))
+    session$setInputs(play_at = list(id = a, visit = 1L))
+    expect_equal(rv$visit$rel_path, rel_of(a))
+  })
+  # And nothing was written for the photograph it played.
+  expect_equal(ph_visit_counts(p$cfg, rel_of(b)), 0L)
+})
+
+test_that("pressing Play keeps what was typed but not navigated away from", {
+  p <- app_project()
+  idx <- ph_read_index(p$cfg)
+  rel <- idx$rel_path[1]
+  shiny::testServer(app_dir_for(p), {
+    session$setInputs(photo_pick = idx$id[1])
+    session$setInputs(tags_now = list(rel = rel, people = list(),
+                                      place = "Elgol", event = "", when = ""))
+    # Play reseeds the fields as it goes, so this is the last chance to keep it.
+    session$setInputs(play_session = ph_sessions(p$cfg)$dir[1] %||% "x")
+    session$setInputs(play = 1)
+  })
+  expect_equal(ph_tags(p$cfg, rel)$place, "Elgol")
+})

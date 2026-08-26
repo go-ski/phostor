@@ -564,12 +564,32 @@ ph_js <- "
     PH.playIdx = i;
     var it = PH.play[i];
     showPhoto(it);
+    // The client keeps the clock -- a round trip per step would not hold image
+    // and sound together -- but the server has to hear where the playback is,
+    // or the panel and the tag fields stay on the photograph Play started from.
+    send('play_at', {id: it.id, visit: it.visit});
+    // Two visits to one photograph in a row leave the panel unrendered between
+    // them, so last visit's highlight would sit there through this one.
+    clearPhrases();
     var strip = document.getElementById('ph-play-fill');
     if (strip) strip.style.width = ((i+1)/PH.play.length*100) + '%';
     if (PH.audio) { PH.audio.pause(); PH.audio = null; }
     clearTimeout(PH.playTimer);
     if (it.audio) {
       PH.audio = new Audio(it.audio);
+      // Detached from the document, so the delegated listener never sees it.
+      // The panel it highlights into arrives a round trip later; until then
+      // there is nothing to find and this does nothing.
+      PH.audio.ontimeupdate = function(){
+        // Only once the panel is this photograph's. Until the server has been
+        // told where the playback is and sent the panel back, it still holds
+        // the previous photograph -- whose visit 1 would otherwise be lit up
+        // by this photograph's visit 1.
+        var panel = document.querySelector('.ph-hist');
+        if (!panel || panel.dataset.photo !== String(it.id)) return;
+        var tx = el('ph-tx-' + it.visit);
+        if (tx) markPhrase(tx.querySelectorAll('.ph-ph'), PH.audio.currentTime);
+      };
       PH.audio.onended = function(){ playAt(i+1); };
       PH.audio.onerror = function(){ playAt(i+1); };
       PH.audio.play().catch(function(){ playAt(i+1); });
@@ -581,6 +601,7 @@ ph_js <- "
   function playStop(finished){
     clearTimeout(PH.playTimer);
     if (PH.audio) { PH.audio.pause(); PH.audio = null; }
+    clearPhrases();
     PH.play = null;
     send('play_ended', {at:Date.now(), finished:!!finished});
   }
@@ -718,10 +739,11 @@ ph_js <- "
   function clearMarks(spans){
     for (var i=0;i<spans.length;i++) spans[i].classList.remove('on');
   }
-  document.addEventListener('timeupdate', function(e){
-    var spans = phrasesFor(e.target);
+  // Move the highlight to whichever phrase holds t. Shared with playback,
+  // whose audio is detached from the document and so never reaches the
+  // delegated listener below.
+  function markPhrase(spans, t){
     if (!spans || !spans.length) return;
-    var t = e.target.currentTime;
     for (var i=0;i<spans.length;i++){
       var s = spans[i];
       // Up to the next phrase's start rather than this one's end, so the
@@ -733,6 +755,14 @@ ph_js <- "
       s.classList.toggle('on', on);
       if (on) s.scrollIntoView({block:'nearest'});
     }
+  }
+  function clearPhrases(){
+    document.querySelectorAll('.ph-ph.on').forEach(function(e){
+      e.classList.remove('on');
+    });
+  }
+  document.addEventListener('timeupdate', function(e){
+    markPhrase(phrasesFor(e.target), e.target.currentTime);
   }, true);
   document.addEventListener('ended', function(e){
     var spans = phrasesFor(e.target);
@@ -1097,14 +1127,19 @@ server <- function(input, output, session) {
            if (nzchar(dims)) paste0("<span>", dims, "</span>") else "")
   }
 
-  show_photo <- function(id) {
+  # notify = FALSE when the client is already showing this photograph and only
+  # the server has to catch up -- playback, which draws its own slideshow.
+  # Re-sending the image there would fight the picture it has just put up.
+  show_photo <- function(id, notify = TRUE) {
     r <- row_of(id)
     if (is.null(r)) return(invisible(NULL))
     rv$current <- as.integer(id)
-    tell("ph_show", list(
-      id = as.integer(id),
-      src = render_url(r$rel_path, "display"),
-      caption = caption_html(r)))
+    if (isTRUE(notify)) {
+      tell("ph_show", list(
+        id = as.integer(id),
+        src = render_url(r$rel_path, "display"),
+        caption = caption_html(r)))
+    }
     seed_fields(r$rel_path)
     invisible(NULL)
   }
@@ -1690,7 +1725,11 @@ server <- function(input, output, session) {
           transcript_html(r$rel_path, s$visit),
           if (nzchar(said)) div(class = "said", said))
     })
-    div(class = "ph-hist",
+    # data-photo: visit numbers start again at 1 for every photograph, so
+    # `ph-tx-1` alone does not say whose transcript it is. Playback checks this
+    # before highlighting, or during the round trip after the photograph
+    # changes it would light up the previous one's words.
+    div(class = "ph-hist", `data-photo` = as.integer(rv$current),
         tags$details(open = NA,
                      tags$summary(sprintf("%d visit(s) to this photograph",
                                           length(v))),
@@ -1701,6 +1740,9 @@ server <- function(input, output, session) {
   observeEvent(input$play, {
     d <- input$play_session
     if (is.null(d) || !nzchar(d)) return()
+    # Playback reseeds the fields as it goes, so anything typed and not yet
+    # navigated away from would be lost for good without this.
+    save_tags()
     close_visit()
     pl <- ph_playlist(cfg, d)
     if (!nrow(pl)) {
@@ -1711,6 +1753,8 @@ server <- function(input, output, session) {
     items <- lapply(seq_len(nrow(pl)), function(i) {
       r <- row_of(pl$id[i])
       list(id = as.integer(pl$id[i]),
+           # The visit, so the client can find the transcript to highlight.
+           visit = as.integer(pl$visit[i]),
            src = render_url(pl$rel_path[i], "display"),
            caption = caption_html(r),
            duration = if (is.na(pl$duration[i])) 3 else pl$duration[i],
@@ -1719,6 +1763,19 @@ server <- function(input, output, session) {
     })
     rv$playing <- TRUE
     tell("ph_play", list(items = items))
+  })
+
+  # Where the playback has reached. The panel below the photograph and the tag
+  # fields read rv$current, so without this they stay on whatever was on screen
+  # when Play was pressed -- and typing into a field would then write against
+  # that photograph rather than the one being shown.
+  #
+  # No visit is opened or closed here: watching a sitting back is not recording
+  # one, and input$play has already closed whatever was open.
+  observeEvent(input$play_at, {
+    id <- as.integer(input$play_at$id)
+    if (is.na(id) || identical(id, rv$current)) return()
+    show_photo(id, notify = FALSE)
   })
 
   stop_play <- function(finished = FALSE) {
