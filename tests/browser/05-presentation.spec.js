@@ -195,3 +195,85 @@ test('typing the letters does not trigger the toggles', async ({ page }) => {
   await expect(body(page)).not.toHaveClass(/ph-nobottom/);
   await expect(page.locator('#place')).toHaveValue('Bridge by the sea');
 });
+
+test('the recording indicator shares the line the title is on', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+
+  // In the navbar, not in the bar above the photograph: that bar is what
+  // presentation hides, and a full-width row carrying one pill was the space
+  // presentation was losing at the top.
+  await expect(page.locator('.navbar .ph-rec')).toBeVisible();
+  expect(await page.locator('.ph-bar .ph-rec').count()).toBe(0);
+
+  // On the title's line, and at the far end of it.
+  const title = await page.locator('.bslib-page-title').boundingBox();
+  const rec = await page.locator('.ph-rec').boundingBox();
+  expect(Math.abs((rec.y + rec.height / 2) - (title.y + title.height / 2)),
+         'the indicator is not on the title line').toBeLessThan(8);
+  expect(rec.x, 'the indicator is not at the end of the line')
+    .toBeGreaterThan(title.x + title.width);
+});
+
+test('presentation leaves one line of text above the photograph', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  await page.click('.ph-img-wrap');
+
+  const before = (await page.locator('.ph-img-wrap').boundingBox()).height;
+
+  await page.keyboard.press('s');
+  await expect(body(page)).toHaveClass(/ph-present/);
+  // The bar the indicator used to sit in goes with everything else.
+  await expect(page.locator('.ph-bar')).toBeHidden();
+  await expect(page.locator('.navbar .ph-rec')).toBeVisible();
+  // The caption stays: a photograph on a wall of screen still says what it is.
+  await expect(page.locator('#ph-cap')).toBeVisible();
+
+  const nav = await page.locator('.navbar').boundingBox();
+  const wrap = await page.locator('.ph-img-wrap').boundingBox();
+  expect(nav.y, 'the title row is not at the top').toBeLessThan(2);
+  expect(wrap.y - (nav.y + nav.height),
+         'something is still between the title and the photograph')
+    .toBeLessThan(4);
+  expect(wrap.height, 'the photograph did not gain the row')
+    .toBeGreaterThan(before);
+
+  // Almost the whole window is photograph: one line of title above it and one
+  // line of caption below, and nothing else.
+  const vh = await page.evaluate(() => window.innerHeight);
+  expect(vh - wrap.height, 'presentation is spending too much on chrome')
+    .toBeLessThan(80);
+
+  await page.keyboard.press('Escape');
+});
+
+test('the tree comes up closed', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+
+  // Nothing open: the sidebar's first job is an overview of the collection.
+  expect(await page.locator('.ph-tree details[open]').count()).toBe(0);
+
+  // A photograph is on screen all the same -- it just does not open its
+  // directory to say so. The row is still marked, so opening it later shows
+  // where you were.
+  const ids = await H.photoIds(page);
+  await H.showing(page, ids[0]);
+  await expect(page.locator(`#ph-p-${ids[0]}`)).toHaveClass(/ph-p-on/);
+  await expect(page.locator(`#ph-p-${ids[0]}`)).toBeHidden();
+});
+
+test('moving to a photograph opens the directories above it', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  const ids = await H.photoIds(page);
+  await page.click('.ph-img-wrap');
+
+  await page.keyboard.press('ArrowDown');
+  await H.showing(page, ids[1]);
+  // Reached by keyboard rather than by clicking, so the tree has to open
+  // itself or the highlight would be somewhere nobody can see.
+  await expect(page.locator(`#ph-p-${ids[1]}`)).toBeVisible();
+  await expect(page.locator(`#ph-p-${ids[1]}`)).toHaveClass(/ph-p-on/);
+});

@@ -10,6 +10,21 @@ test.describe.configure({ mode: 'serial' });
 
 let ids;
 
+test('the client starts without throwing', async ({ page }) => {
+  // First, because a throw while the message handlers register takes the whole
+  // client down with it: every other spec then fails waiting on a tree that
+  // will never appear, which says nothing about what actually went wrong.
+  // Shiny rejecting a handler that does not take exactly one argument is one
+  // way to get there.
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree', { timeout: 20000 }).catch(() => {});
+  expect(errors, 'the client threw while starting').toEqual([]);
+  await expect(page.locator('.ph-tree')).toBeVisible();
+});
+
 test('the app loads and the tree matches the photo directory', async ({ page }) => {
   await page.goto('/');
   await page.waitForSelector('.ph-tree');

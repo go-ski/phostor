@@ -202,7 +202,30 @@ async function showing(page, id) {
     (i) => window.PH && window.PH.current === i, id, { timeout: 15000 });
 }
 
+// The magnification the photograph is being shown at, read twice: what the
+// app believes, and the scale factor actually on the element. A number that
+// never reached the DOM is not a zoom.
+async function zoomOf(page) {
+  return page.evaluate(() => {
+    const im = document.getElementById('ph-photo');
+    const t = getComputedStyle(im).transform;
+    // 'none' is how a cleared transform reads, which is fitted.
+    const m = t === 'none' ? [1] : t.match(/-?[\d.]+/g).map(Number);
+    return { state: window.PH.z, css: m[0] };
+  });
+}
+
+// Where the photograph's own pixels are on screen, transform included.
+async function photoBox(page) {
+  return page.evaluate(() => {
+    const r = document.getElementById('ph-photo').getBoundingClientRect();
+    const f = document.querySelector('.ph-img-wrap').getBoundingClientRect();
+    return { x: r.x - f.x, y: r.y - f.y, w: r.width, h: r.height,
+             W: f.width, H: f.height };
+  });
+}
+
 module.exports = { WORK, PHOTOS, sidecars, visitFiles, audioFiles, AUDIO_EXTS,
                    pathRows, expectValidAudio, micState, waitForVisitChunks, indexIds,
                    photoIds, openPhoto, showing, sessionCount, recordShortSitting, hasTuneR,
-                   bytesProduced, bytesStored };
+                   bytesProduced, bytesStored, zoomOf, photoBox };

@@ -17,6 +17,35 @@ test_that("the tree nests directories and closes every one it opens", {
   expect_match(h, "Trips</summary><details><summary[^>]*>Skye")
 })
 
+# How many times a pattern appears in one HTML string.
+n_of <- function(h, pat) lengths(regmatches(h, gregexpr(pat, h)))
+
+test_that("open_depth decides how much of the tree arrives open", {
+  # The app passes 0. A collection one folder deep -- the common shape -- has
+  # every photograph in it at depth 1, so one level open is the whole thing,
+  # and the sidebar's first job is an overview of the collection.
+  shut <- ph_tree_html(mini(), open_depth = 0L)
+  expect_equal(n_of(shut, "<details"), 3L)          # A&B, Trips, Skye
+  expect_equal(n_of(shut, "<details open>"), 0L)
+
+  one <- ph_tree_html(mini(), open_depth = 1L)
+  expect_equal(n_of(one, "<details open>"), 2L)     # A&B and Trips
+  expect_equal(n_of(one, "<details>"), 1L)          # Skye, nested in Trips
+
+  expect_equal(n_of(ph_tree_html(mini(), open_depth = Inf),
+                    "<details open>"), 3L)
+})
+
+test_that("a photograph at the root shows whatever open_depth says", {
+  # top.jpg is inside no directory, so nothing can hide it. Everything after
+  # the last </details> is at the root level.
+  for (d in list(0L, 1L, Inf)) {
+    h <- ph_tree_html(mini(), open_depth = d)
+    expect_match(sub(".*</details>", "", h), "top\\.jpg",
+                 info = paste("open_depth =", d))
+  }
+})
+
 test_that("names are escaped, in the row and in the directory alike", {
   h <- ph_tree_html(mini())
   expect_match(h, "&lt;odd&gt;\\.jpg", fixed = FALSE)

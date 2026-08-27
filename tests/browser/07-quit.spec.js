@@ -4,6 +4,11 @@ const H = require('./helpers');
 // Runs last on purpose: it stops the phostor instance the other specs share.
 // run.sh kills the server with `|| true`, so a process that has already gone
 // is not an error, and each browser gets its own instance.
+//
+// Playwright runs spec files in name order, so this one must keep the highest
+// number. A new spec numbered above it cannot reach the server at all: every
+// one of its tests fails on ERR_CONNECTION_REFUSED, saying nothing about
+// itself.
 test('Quit asks first, and can be cancelled', async ({ page }) => {
   await page.goto('/');
   await page.waitForSelector('.ph-tree');

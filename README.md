@@ -109,22 +109,30 @@ phostor go   --work ~/phostor/family
    that recording has started. A red **REC** badge stays on screen while the
    microphone is live. If the microphone does not open, the app reports why and
    offers **Try the microphone again**.
-2. **Show photographs.** Click the tree, or use `←` `→` `↑` `↓` — all four
-   move to the previous or next photograph, so it does not matter which your
-   hand reaches for. `b` folds away the fields and visits under the photograph,
-   so it takes the height. `s` is presentation mode: full screen on the
-   display, with the browser's own chrome, the menu bar and the Dock gone, and
-   nothing left but the photograph and the recording indicator. `s` or **Esc**
-   leaves, and the app says so on screen as you go in.
-3. **Talk.** Recording follows the photographs on its own.
-4. **Add what was established.** Names go in as chips, with autocomplete from
+2. **Show photographs.** The tree starts closed, so what you see first is the
+   collection rather than every photograph in it. Click to open a directory
+   and click a photograph, or use `←` `→` `↑` `↓` — all four move to the
+   previous or next photograph, so it does not matter which your hand reaches
+   for, and the tree opens itself to follow. `b` folds away the fields and
+   visits under the photograph, so it takes the height. `s` is presentation
+   mode: full screen on the display, with the browser's own chrome, the menu
+   bar and the Dock gone, and nothing left but one line of title, the
+   photograph, and the recording indicator. `s` or **Esc** leaves, and the app
+   says so on screen as you go in.
+3. **Look closer.** Scroll on the photograph to zoom where the pointer is,
+   drag to move around, and double-click to go in and back out. `+` and `-`
+   step, `0` returns to fitted. What is magnified is the display copy, so how
+   far it stays sharp follows `display_size` in the config (4096 pixels on the
+   longest edge by default); raise it and re-render for more.
+4. **Talk.** Recording follows the photographs on its own.
+5. **Add what was established.** Names go in as chips, with autocomplete from
    every name used earlier in the project. Place, event and a date guess are
    three short fields. They belong to the photograph, not to the sitting, so
    they can be filled in at any time -- with a sitting running or without one --
    and are kept when you move on. Coming back to a photograph shows them again.
-5. **Pause** to stop recording, then **Resume**. **Discard this take** throws
+6. **Pause** to stop recording, then **Resume**. **Discard this take** throws
    away the recording for the photograph on screen and starts it again.
-6. **End sitting.**
+7. **End sitting.**
 
 Later, pick the sitting from the dropdown and press **Play**.
 
@@ -405,7 +413,7 @@ transcriber finishes with it.
 A recording with no timings shows its prose as one block, and one the
 transcriber could never read shows just its player. Press `b` to fold the
 panel away and give the photograph the height, or `s` for full-screen
-presentation.
+presentation. Scrolling on the photograph zooms it, in either.
 
 ## Who said it
 

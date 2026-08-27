@@ -72,11 +72,35 @@ body { background:var(--ph-bg); color:var(--ph-ink); }
 
 .ph-stage { display:flex; flex-direction:column; height:100%; min-height:0; }
 .ph-img-wrap { flex:1 1 auto; min-height:0; display:flex; align-items:center;
-  justify-content:center; background:#000; border-radius:6px; overflow:hidden; }
-#ph-photo { max-width:100%; max-height:100%; object-fit:contain; display:block; }
+  justify-content:center; background:#000; border-radius:6px; overflow:hidden;
+  position:relative; }
+/* transform-origin at the corner, so a zoom about a point is one subtraction
+   rather than a correction for a moving centre. See zoomAt(). No transition:
+   the wheel and the drag both write this every frame, and easing them turns
+   the photograph to rubber. */
+#ph-photo { max-width:100%; max-height:100%; object-fit:contain; display:block;
+  transform-origin:0 0; }
+.ph-img-wrap.ph-zoomed { cursor:grab; user-select:none; }
+.ph-img-wrap.ph-panning { cursor:grabbing; }
+/* Says what the magnification is, and then gets out of the way. Inside the
+   frame rather than fixed to the window, so it sits on the photograph in
+   presentation and in the ordinary view alike. */
+#ph-zoom { position:absolute; top:.5rem; right:.6rem; z-index:2;
+  background:rgba(0,0,0,.66); color:var(--ph-ink); border-radius:999px;
+  border:1px solid var(--ph-line); padding:.1rem .55rem; font-size:.78rem;
+  font-variant-numeric:tabular-nums; pointer-events:none;
+  opacity:0; transition:opacity .4s; }
+#ph-zoom.on { opacity:1; }
 .ph-cap { flex:0 0 auto; padding:.4rem .1rem .1rem; color:var(--ph-dim);
   font-size:.85rem; display:flex; gap:1rem; flex-wrap:wrap; }
 .ph-cap b { color:var(--ph-ink); font-weight:600; }
+
+/* The title row. bslib's navbar > .container-fluid is a flex row, so the
+   title takes it and pushes the recording indicator to the far end. */
+.ph-title { flex:1 1 auto; display:flex; align-items:center; min-width:0; }
+.ph-title .bslib-page-title { overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; }
+.ph-title #rec { margin-left:auto; flex:0 0 auto; }
 
 .ph-bar { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap;
   padding:.35rem 0 .5rem; border-bottom:1px solid var(--ph-line);
@@ -120,6 +144,7 @@ body { background:var(--ph-bg); color:var(--ph-ink); }
 /* Presentation mode: photograph and recording indicator only. */
 body.ph-present .bslib-sidebar-layout > .sidebar,
 body.ph-present .ph-tags, body.ph-present .ph-hist-wrap,
+body.ph-present .ph-bar,
 body.ph-present .ph-hide { display:none !important; }
 body.ph-present .ph-img-wrap { border-radius:0; }
 body.ph-present { overflow:hidden; }
@@ -131,6 +156,19 @@ body.ph-present .bslib-sidebar-layout {
 body.ph-present .bslib-sidebar-layout > .main { padding:0 !important; }
 body.ph-present .bslib-sidebar-layout > .collapse-toggle {
   display:none !important; }
+/* One line of text above the photograph and one below. The navbar is kept --
+   a photograph on a wall of screen should still say what collection it
+   belongs to -- but shrunk to what that line needs, and the layout's own
+   bottom margin goes with everything else that was taking height. */
+body.ph-present .navbar { --bs-navbar-padding-y:0; }
+body.ph-present .navbar .container-fluid { padding:0 .6rem; }
+body.ph-present .bslib-page-title { font-size:.95rem;
+  --bs-navbar-brand-padding-y:.15rem; }
+body.ph-present .ph-rec { font-size:.8rem; padding:.05rem .55rem; }
+body.ph-present .bslib-sidebar-layout { margin-bottom:0 !important; }
+/* The main panel's padding is dropped in presentation, so the caption would
+   otherwise sit hard against the edge while the title above it does not. */
+body.ph-present .ph-cap { padding-left:.6rem; padding-right:.6rem; }
 
 /* b: fold away what is under the photograph, keeping everything else. The
    caption stays, as it does in presentation mode -- a photograph on screen
@@ -190,7 +228,8 @@ ph_js <- "
     play:null, playIdx:0, audio:null, tagsFor:null, tagsWant:null,
     deviceId:null, sitting:false, checkOwnsStream:false, ac:null, meter:null,
     visitKey:'', ackedBy:{}, bytesBy:{}, stopped:{}, dropped:{},
-    closeTimer:{}
+    closeTimer:{},
+    z:1, tx:0, ty:0, drag:null
   };
   window.PH = PH;
 
@@ -652,27 +691,204 @@ ph_js <- "
     PH.hintTimer = setTimeout(function(){ h.classList.remove('on'); }, 2500);
   }
 
+  // ---- zoom --------------------------------------------------------------
+  // What is zoomed is the display copy, rendered once at display_size (4096 by
+  // default). Nothing else is served, so every format works, HEIC included,
+  // and the ceiling belongs to the render rather than to what the browser can
+  // open: past roughly 4x on an ordinary screen its pixels run out and the
+  // picture goes soft. display_size is the knob for that, not this file.
+  //
+  // Held on the client only, like presentation: the server has no part in how
+  // far into a photograph anyone is looking.
+  var PH_ZMAX = 8, PH_ZSTEP = 1.25;
+
+  // The image is laid out fitted and centred by flex, and the transform is
+  // applied on top of that, so where its box sits inside the frame is part of
+  // every calculation here.
+  function zoomFrame(){
+    var im = el('ph-photo');
+    var wrap = im && im.parentElement;
+    if (!im || !wrap) return null;
+    // Fractional sizes, not offsetWidth and clientWidth: those round to whole
+    // pixels, and the clamp multiplies whatever it is given by the zoom, so a
+    // third of a pixel of rounding becomes two or three at the top of the
+    // range -- a sliver of background beside a photograph that is supposed to
+    // be covering the frame. getComputedStyle reports the laid-out size and
+    // ignores the transform, so this is the same answer at every zoom.
+    var wr = wrap.getBoundingClientRect();
+    var cs = getComputedStyle(im);
+    var w = parseFloat(cs.width), h = parseFloat(cs.height);
+    if (!(w > 0) || !(h > 0) || !(wr.width > 0)) return null;
+    return {im:im, wrap:wrap, W:wr.width, H:wr.height, w:w, h:h,
+            ox:(wr.width - w) / 2, oy:(wr.height - h) / 2};
+  }
+  // Keep the photograph in the frame: covering it once it is bigger, centred
+  // while it is not. One axis, because both are the same problem.
+  function zoomClamp(t, span, size, off){
+    if (size <= span) return (span - size) / 2 - off;
+    return Math.min(-off, Math.max(span - off - size, t));
+  }
+  function zoomApply(){
+    var f = zoomFrame();
+    if (!f) return;
+    PH.tx = zoomClamp(PH.tx, f.W, f.w * PH.z, f.ox);
+    PH.ty = zoomClamp(PH.ty, f.H, f.h * PH.z, f.oy);
+    // Cleared rather than written at 1: fitted is the element's own layout,
+    // and an identity transform would still make it a composited layer.
+    f.im.style.transform = PH.z === 1 ? '' :
+      'translate(' + PH.tx + 'px,' + PH.ty + 'px) scale(' + PH.z + ')';
+    f.wrap.classList.toggle('ph-zoomed', PH.z > 1);
+    showZoom();
+  }
+  // Zoom to z about a point in frame coordinates, holding whatever is under
+  // that point still. With the origin at the image's own corner that is one
+  // subtraction:  t' = p - o - (p - o - t) * z'/z
+  function zoomAt(z, px, py){
+    var f = zoomFrame();
+    if (!f) return;
+    z = Math.max(1, Math.min(PH_ZMAX, z));
+    if (px === undefined || px === null) { px = f.W / 2; py = f.H / 2; }
+    var k = z / PH.z;
+    PH.tx = px - f.ox - (px - f.ox - PH.tx) * k;
+    PH.ty = py - f.oy - (py - f.oy - PH.ty) * k;
+    PH.z = z;
+    zoomApply();
+  }
+  function zoomReset(){
+    PH.z = 1; PH.tx = 0; PH.ty = 0; PH.drag = null;
+    var im = el('ph-photo');
+    if (im) {
+      im.style.transform = '';
+      if (im.parentElement) {
+        im.parentElement.classList.remove('ph-zoomed', 'ph-panning');
+      }
+    }
+    var b = el('ph-zoom');
+    if (b) b.classList.remove('on');
+  }
+  // Says what the magnification is and then gets out of the way, like the
+  // hint on the way into presentation.
+  function showZoom(){
+    var b = el('ph-zoom');
+    if (!b) return;
+    b.textContent = Math.round(PH.z * 100) + '%';
+    clearTimeout(PH.zoomTimer);
+    if (PH.z === 1) { b.classList.remove('on'); return; }
+    b.classList.add('on');
+    PH.zoomTimer = setTimeout(function(){ b.classList.remove('on'); }, 1400);
+  }
+  function zoomPoint(e){
+    var f = zoomFrame();
+    if (!f) return null;
+    var r = f.wrap.getBoundingClientRect();
+    return {x:e.clientX - r.left, y:e.clientY - r.top};
+  }
+  // Delegated, like the transcript handlers: this script runs in <head>, where
+  // the frame does not exist yet.
+  function zoomWrap(e){
+    return e.target && e.target.closest ?
+      e.target.closest('.ph-img-wrap') : null;
+  }
+
+  document.addEventListener('wheel', function(e){
+    if (!zoomWrap(e)) return;
+    var p = zoomPoint(e);
+    if (!p) return;
+    // The frame scrolls nothing, so taking the wheel here costs no scrolling.
+    e.preventDefault();
+    // deltaMode 1 is lines rather than pixels, which is how Firefox reports a
+    // mouse wheel. A trackpad pinch arrives as ctrlKey + wheel and wants the
+    // same treatment, so it needs no path of its own.
+    var d = e.deltaY * (e.deltaMode === 1 ? 16 : 1);
+    zoomAt(PH.z * Math.exp(-d / 400), p.x, p.y);
+  }, {passive:false});
+
+  document.addEventListener('dblclick', function(e){
+    if (!zoomWrap(e)) return;
+    var p = zoomPoint(e);
+    if (!p) return;
+    e.preventDefault();
+    if (PH.z > 1) zoomReset(); else zoomAt(2, p.x, p.y);
+  });
+
+  document.addEventListener('pointerdown', function(e){
+    var wrap = zoomWrap(e);
+    if (!wrap || PH.z === 1 || e.button !== 0) return;
+    // Not a drag until the pointer actually moves. Clicking the frame is how
+    // focus is taken off the tag fields, in the app and in the specs alike,
+    // and that has to stay a click.
+    PH.drag = {x:e.clientX, y:e.clientY, tx:PH.tx, ty:PH.ty,
+               wrap:wrap, id:e.pointerId, moved:false};
+  });
+  document.addEventListener('pointermove', function(e){
+    var d = PH.drag;
+    if (!d || e.pointerId !== d.id) return;
+    var dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if (!d.moved) {
+      if (Math.abs(dx) + Math.abs(dy) < 3) return;
+      d.moved = true;
+      d.wrap.classList.add('ph-panning');
+      // Capture, so a drag that leaves the frame keeps panning rather than
+      // stopping dead at the edge.
+      try { d.wrap.setPointerCapture(d.id); } catch (err) {}
+    }
+    e.preventDefault();
+    PH.tx = d.tx + dx;
+    PH.ty = d.ty + dy;
+    zoomApply();
+  });
+  function dragEnd(e){
+    var d = PH.drag;
+    if (!d || (e && e.pointerId !== d.id)) return;
+    d.wrap.classList.remove('ph-panning');
+    PH.drag = null;
+  }
+  document.addEventListener('pointerup', dragEnd);
+  document.addEventListener('pointercancel', dragEnd);
+  // Re-clamp whenever the frame changes size, keeping the magnification and
+  // moving only where it is pointed. The frame is watched rather than the
+  // window because most of what resizes it is not a window resize: entering
+  // presentation, the b key, and the visits panel below filling itself in a
+  // few seconds after a photograph is left. A window listener saw none of
+  // those, and left the photograph clamped to a frame that had gone.
+  //
+  // Registered on connect, because this script runs in <head> and the frame
+  // does not exist yet. Writing a transform does not change layout, so this
+  // cannot set itself off again.
+  $(document).on('shiny:connected', function(){
+    var fr = el('ph-photo');
+    fr = fr && fr.parentElement;
+    if (!fr || !window.ResizeObserver) return;
+    new ResizeObserver(function(){ if (PH.z !== 1) zoomApply(); }).observe(fr);
+  });
+
   function showPhoto(it){
     var im = document.getElementById('ph-photo');
     if (im && it.src) im.src = it.src;
     var cap = document.getElementById('ph-cap');
     if (cap) cap.innerHTML = it.caption || '';
-    if (it.id) markCurrent(it.id);
+    // A new photograph arrives fitted, whatever magnification the last one
+    // was left at.
+    zoomReset();
+    if (it.id) markCurrent(it.id, it.reveal !== false);
   }
-  function markCurrent(id){
+  // reveal defaults to true: the highlight normally has to be brought into
+  // view, and every caller but the one at startup wants that.
+  function markCurrent(id, reveal){
     PH.current = id;
     document.querySelectorAll('.ph-p-on').forEach(function(e){
       e.classList.remove('ph-p-on');
     });
     var el = document.getElementById('ph-p-' + id);
-    if (el) {
-      el.classList.add('ph-p-on');
-      el.scrollIntoView({block:'nearest'});
-      // Open collapsed ancestors, so a photograph reached by keyboard or by
-      // playback is visible in the tree.
-      var p = el.parentElement;
-      while (p) { if (p.tagName === 'DETAILS') p.open = true; p = p.parentElement; }
-    }
+    if (!el) return;
+    // Marked either way, so opening the directory later shows where you were.
+    el.classList.add('ph-p-on');
+    if (reveal === false) return;
+    el.scrollIntoView({block:'nearest'});
+    // Open collapsed ancestors, so a photograph reached by keyboard or by
+    // playback is visible in the tree.
+    var p = el.parentElement;
+    while (p) { if (p.tagName === 'DETAILS') p.open = true; p = p.parentElement; }
   }
 
   // ---- tag fields --------------------------------------------------------
@@ -818,6 +1034,18 @@ ph_js <- "
       setPresent(!inPresent());
     } else if (e.key === 'b') {
       document.body.classList.toggle('ph-nobottom');
+    } else if (e.key === '+' || e.key === '=') {
+      // Both, because + is shift-= on most keyboards and either is what the
+      // hand reaches for. About the middle of the frame: there is no pointer
+      // involved in a keystroke.
+      e.preventDefault();
+      zoomAt(PH.z * PH_ZSTEP);
+    } else if (e.key === '-' || e.key === '_') {
+      e.preventDefault();
+      zoomAt(PH.z / PH_ZSTEP);
+    } else if (e.key === '0') {
+      e.preventDefault();
+      zoomReset();
     } else if (e.key === 'Escape') {
       // Leaves, never enters. In full screen the browser takes Escape for
       // itself and fullscreenchange brings presentation out; this is the path
@@ -832,7 +1060,10 @@ ph_js <- "
       PH.chunkMs = (m.chunk_seconds || 5) * 1000;
     });
     Shiny.addCustomMessageHandler('ph_show', showPhoto);
-    Shiny.addCustomMessageHandler('ph_current', markCurrent);
+    // Wrapped rather than passed: Shiny insists a handler take exactly one
+    // argument, and markCurrent takes a second saying whether to open the
+    // directories above the row.
+    Shiny.addCustomMessageHandler('ph_current', function(m){ markCurrent(m); });
     Shiny.addCustomMessageHandler('ph_badge', function(m){
       var el = document.getElementById('ph-p-' + m.id);
       if (!el) return;
@@ -956,7 +1187,18 @@ ph_js <- "
 "
 
 ui <- page_sidebar(
-  title = paste("phostor —", cfg$title),
+  # A tag rather than a string, so the recording indicator can share the line
+  # the title is on. bslib passes a tag through untouched, which is why the
+  # <h1 class="bslib-page-title navbar-brand"> it would otherwise have written
+  # is written here: the heading is what a screen reader announces the page by.
+  title = div(
+    class = "ph-title",
+    tags$h1(class = "bslib-page-title navbar-brand",
+            paste("phostor —", cfg$title)),
+    # Not in the bar under it: that bar is hidden in presentation, and one
+    # full-width row carrying a single pill was the space presentation was
+    # losing at the top. Here it is on screen in both modes for one row.
+    uiOutput("rec", inline = TRUE)),
   theme = bs_theme(version = 5, bg = "#111316", fg = "#e8eaed",
                    primary = "#3b82f6"),
   fillable = TRUE,
@@ -978,13 +1220,14 @@ ui <- page_sidebar(
         # than in the middle of "full screen".
         HTML(paste("&larr;&nbsp;&rarr;&nbsp;&uarr;&nbsp;&darr; move &middot;",
                    "<b>s</b>&nbsp;presentation &middot; <b>b</b>&nbsp;bottom",
+                   "<br><b>+</b>&nbsp;<b>&minus;</b>&nbsp;<b>0</b>&nbsp;zoom,",
+                   "or scroll and drag on the photograph",
                    "<br><b>Esc</b> leaves presentation")))
   ),
   div(
     class = "ph-stage",
     div(
       class = "ph-bar",
-      uiOutput("rec", inline = TRUE),
       div(class = "ph-hide",
           actionButton("mic_check_btn", "Check microphone",
                        class = "btn-sm btn-outline-light")),
@@ -1020,7 +1263,15 @@ ui <- page_sidebar(
     ),
     uiOutput("browser_banner"),
     uiOutput("integrity_warn"),
-    div(class = "ph-img-wrap", tags$img(id = "ph-photo", alt = "")),
+    div(class = "ph-img-wrap",
+        # draggable = "false": dragging an image is a native drag-and-drop,
+        # and Firefox cancels the pointer the moment one starts -- no
+        # pointermove arrives after it, so a pan would stop dead on the first
+        # movement. See the pan handler.
+        tags$img(id = "ph-photo", alt = "", draggable = "false"),
+        # Inside the frame rather than fixed to the window, so it sits on the
+        # photograph in presentation and in the ordinary view alike.
+        div(id = "ph-zoom")),
     div(id = "ph-cap", class = "ph-cap"),
     div(class = "ph-play-strip ph-hide", tags$i(id = "ph-play-fill")),
     div(
@@ -1115,7 +1366,11 @@ server <- function(input, output, session) {
     counts <- ph_visit_counts(cfg, rv$idx$rel_path)
     thumbs <- vapply(rv$idx$rel_path, render_url, character(1), "thumb",
                      USE.NAMES = FALSE)
-    HTML(ph_tree_html(rv$idx, counts = counts, thumbs = thumbs))
+    # Closed: the sidebar's first job is an overview of the collection, and
+    # one level open is every photograph in a collection one folder deep.
+    # A photograph reached later opens its ancestors on the client.
+    HTML(ph_tree_html(rv$idx, counts = counts, thumbs = thumbs,
+                      open_depth = 0L))
   })
 
   # onFlushed() runs outside a reactive context, where reading rv$... raises
@@ -1126,7 +1381,7 @@ server <- function(input, output, session) {
     isolate({
       tell("ph_init", list(order = as.list(ph_tree_order(rv$idx)),
                            chunk_seconds = cfg$chunk_seconds))
-      if (nrow(rv$idx)) show_photo(ph_tree_order(rv$idx)[[1]])
+      if (nrow(rv$idx)) show_photo(ph_tree_order(rv$idx)[[1]], reveal = FALSE)
     })
   }, once = TRUE)
 
@@ -1149,7 +1404,11 @@ server <- function(input, output, session) {
   # notify = FALSE when the client is already showing this photograph and only
   # the server has to catch up -- playback, which draws its own slideshow.
   # Re-sending the image there would fight the picture it has just put up.
-  show_photo <- function(id, notify = TRUE) {
+  # reveal = FALSE marks the row without opening the directories above it.
+  # Only the photograph shown at startup asks for that: the tree is closed so
+  # that the collection can be taken in, and opening one folder to say where
+  # the first photograph is would undo most of that on a flat collection.
+  show_photo <- function(id, notify = TRUE, reveal = TRUE) {
     r <- row_of(id)
     if (is.null(r)) return(invisible(NULL))
     rv$current <- as.integer(id)
@@ -1157,7 +1416,8 @@ server <- function(input, output, session) {
       tell("ph_show", list(
         id = as.integer(id),
         src = render_url(r$rel_path, "display"),
-        caption = caption_html(r)))
+        caption = caption_html(r),
+        reveal = isTRUE(reveal)))
     }
     seed_fields(r$rel_path)
     invisible(NULL)
