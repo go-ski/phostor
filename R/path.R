@@ -1,4 +1,4 @@
-# The path taken through the photographs, one sitting per directory:
+# The path taken through the photographs, one session per directory:
 #
 #   sessions/2026-08-23-1930/session.yml
 #   sessions/2026-08-23-1930/path.tsv
@@ -22,13 +22,13 @@ ph_now_iso <- function(t = Sys.time()) {
   format(as.POSIXct(t), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
 }
 
-#' Start a new sitting.
+#' Start a new session.
 #'
 #' Creates `sessions/<stamp>/` with a `session.yml` and a `path.tsv` carrying
 #' its header row and a `start` event.
 #'
 #' @param config A work directory, a config path, or a config list.
-#' @param title Title for this sitting; defaults to the project title.
+#' @param title Title for this session; defaults to the project title.
 #' @return The session directory, invisibly.
 #' @examples
 #' \dontrun{
@@ -40,7 +40,7 @@ ph_path_new <- function(config = NULL, title = NULL) {
   now <- Sys.time()
   stamp <- format(now, "%Y-%m-%d-%H%M")
   dir <- file.path(cfg$sessions_dir, stamp)
-  # Two sittings in the same minute would otherwise share a directory and
+  # Two sessions in the same minute would otherwise share a directory and
   # interleave their paths into one file.
   n <- 1L
   while (dir.exists(dir)) {
@@ -50,7 +50,7 @@ ph_path_new <- function(config = NULL, title = NULL) {
   dir.create(dir, recursive = TRUE, showWarnings = FALSE)
 
   writeLines(c(
-    sprintf("# phostor %s -- a sitting.", ph_pkg_version()),
+    sprintf("# phostor %s -- a session.", ph_pkg_version()),
     yaml::as.yaml(list(session = basename(dir),
                        title = title %||% cfg$title,
                        started = ph_now_iso(now),
@@ -63,7 +63,7 @@ ph_path_new <- function(config = NULL, title = NULL) {
   invisible(dir)
 }
 
-#' Append one event to a sitting's path.
+#' Append one event to a session's path.
 #'
 #' @param session_dir A session directory from [ph_path_new()].
 #' @param event One of `start`, `show`, `leave`, `discard`, `pause`, `resume`,
@@ -71,7 +71,7 @@ ph_path_new <- function(config = NULL, title = NULL) {
 #' @param rel_path Photograph the event concerns, if any.
 #' @param visit Visit number, if any.
 #' @param duration Visit duration in seconds, if any.
-#' @param started The sitting's start time, used only for the `start` row.
+#' @param started The session's start time, used only for the `start` row.
 #' @param time Event time; defaults to now.
 #' @return The row written, invisibly, as a character vector.
 #' @examples
@@ -99,7 +99,7 @@ ph_path_append <- function(session_dir, event, rel_path = NA, visit = NA,
   invisible(row)
 }
 
-# The sitting's start time, read back from its own first row so that elapsed
+# The session's start time, read back from its own first row so that elapsed
 # times stay correct across an app restart.
 ph_path_start <- function(session_dir) {
   p <- ph_path_read(session_dir)
@@ -108,7 +108,7 @@ ph_path_start <- function(session_dir) {
                         tz = "UTC"))
 }
 
-#' Read a sitting's path.
+#' Read a session's path.
 #'
 #' @param session_dir A session directory.
 #' @return A data.frame with the columns of `path.tsv`; empty if there is none.
@@ -134,7 +134,7 @@ ph_path_read <- function(session_dir) {
   x[ph_path_cols]
 }
 
-#' The sittings recorded in a project, newest first.
+#' The sessions recorded in a project, newest first.
 #'
 #' @param config A work directory, a config path, or a config list.
 #' @return A data.frame with `session`, `dir`, `title`, `started`, `visits`.
@@ -166,7 +166,7 @@ ph_sessions <- function(config = NULL) {
   out[order(out$session, decreasing = TRUE), , drop = FALSE]
 }
 
-#' The playlist for one sitting.
+#' The playlist for one session.
 #'
 #' Every completed visit, in the order it was recorded, with the audio each one
 #' produced. This is what the Play button walks.

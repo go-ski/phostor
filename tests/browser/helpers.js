@@ -24,7 +24,7 @@ function visitFiles(ext) {
   return out.sort();
 }
 
-// The newest sitting's path.tsv, parsed into rows.
+// The newest session's path.tsv, parsed into rows.
 function pathRows() {
   const sdir = path.join(WORK, 'sessions');
   if (!fs.existsSync(sdir)) return [];
@@ -152,15 +152,15 @@ function hasTuneR() {
   return _tuneR;
 }
 
-// How many sittings this project holds.
+// How many sessions this project holds.
 function sessionCount() {
   const d = path.join(WORK, 'sessions');
   return fs.existsSync(d) ? fs.readdirSync(d).length : 0;
 }
 
-// Record a short sitting, so a spec that needs one can stand alone rather
+// Record a short session, so a spec that needs one can stand alone rather
 // than depending on which file Playwright ran first.
-async function recordShortSitting(page) {
+async function recordShortSession(page) {
   const ids = await photoIds(page);
   await page.click('#start');
   await page.waitForSelector('.modal-content');
@@ -169,8 +169,8 @@ async function recordShortSitting(page) {
   await waitForVisitChunks(page);
   await openPhoto(page, ids[1]);
   await waitForVisitChunks(page);
-  await page.click('#stop_sitting');
-  await page.waitForSelector('.modal-content:has-text("Sitting ended")');
+  await page.click('#stop_session');
+  await page.waitForSelector('.modal-content:has-text("Session ended")');
   await page.click('.modal-footer button');
 }
 
@@ -227,5 +227,5 @@ async function photoBox(page) {
 
 module.exports = { WORK, PHOTOS, sidecars, visitFiles, audioFiles, AUDIO_EXTS,
                    pathRows, expectValidAudio, micState, waitForVisitChunks, indexIds,
-                   photoIds, openPhoto, showing, sessionCount, recordShortSitting, hasTuneR,
+                   photoIds, openPhoto, showing, sessionCount, recordShortSession, hasTuneR,
                    bytesProduced, bytesStored, zoomOf, photoBox };

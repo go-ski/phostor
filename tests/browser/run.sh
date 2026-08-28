@@ -8,7 +8,7 @@
 #
 #   tests/browser/run.sh                 every browser, every spec
 #   tests/browser/run.sh --headed        watch it happen
-#   tests/browser/run.sh 01-sitting      one spec file
+#   tests/browser/run.sh 01-session      one spec file
 #
 # Chrome is used as installed. Firefox needs Playwright's own build:
 #   npx --prefix tests/browser playwright install firefox
@@ -77,7 +77,7 @@ for proj in "${projects[@]}"; do
   rm -f "$photos/_t.v"
 
   # Hash the collection so it can be compared after a browser has driven a
-  # sitting against it.
+  # session against it.
   before="$tmp/$proj-before.sha"
   find "$photos" -type f -exec shasum -a 256 {} \; | sort > "$before"
 

@@ -9,14 +9,14 @@ disk.
 
 - The folder tree of a read-only photo directory is the sidebar. Click any
   photograph to show it.
-- Start a sitting and the microphone stays live. Segments start and stop by
+- Start a session and the microphone stays live. Segments start and stop by
   themselves as photographs change, so nobody has to remember to press anything.
 - Every visit to a photograph writes its own sidecar file holding the audio,
   the names given, and a place, event and date.
 - Returning to a photograph later adds a second visit. Nothing is overwritten,
   and the earlier audio can be played back and corrected.
 - The order photographs were viewed in is logged as it happens.
-- **Play** replays a sitting: the same photographs, in the same order, with the
+- **Play** replays a session: the same photographs, in the same order, with the
   same audio.
 
 **The photo directory is never written to.** phostor refuses to start if its
@@ -100,12 +100,12 @@ phostor init --work ~/phostor/family --photos ~/family-photos
 phostor go   --work ~/phostor/family
 ```
 
-## Running a sitting
+## Running a session
 
 0. **Check microphone** first. The level meter should move when you speak. If
    there is more than one input, select the right one: a virtual device (Teams,
    Zoom) or a disconnected phone will record silence.
-1. **Start sitting.** The browser asks for the microphone, and a dialog states
+1. **Start session.** The browser asks for the microphone, and a dialog states
    that recording has started. A red **REC** badge stays on screen while the
    microphone is live. If the microphone does not open, the app reports why and
    offers **Try the microphone again**.
@@ -127,17 +127,17 @@ phostor go   --work ~/phostor/family
 4. **Talk.** Recording follows the photographs on its own.
 5. **Add what was established.** Names go in as chips, with autocomplete from
    every name used earlier in the project. Place, event and a date guess are
-   three short fields. They belong to the photograph, not to the sitting, so
-   they can be filled in at any time -- with a sitting running or without one --
+   three short fields. They belong to the photograph, not to the session, so
+   they can be filled in at any time -- with a session running or without one --
    and are kept when you move on. Coming back to a photograph shows them again.
 6. **Pause** to stop recording, then **Resume**. **Discard this take** throws
    away the recording for the photograph on screen and starts it again.
-7. **End sitting.**
+7. **End session.**
 
-Later, pick the sitting from the dropdown and press **Play**.
+Later, pick the session from the dropdown and press **Play**.
 
 **To stop phostor**, press **Quit** in the sidebar. It asks first, ends any
-sitting in progress so the recording on screen is saved, and then stops the
+session in progress so the recording on screen is saved, and then stops the
 server. Ctrl+C in the terminal it was launched from does the same, and is the
 way out if the browser has already gone. Closing the browser tab does not stop
 it: the app goes on listening.
@@ -212,19 +212,19 @@ when: summer 1974
 
 Who is in a photograph, where it was taken, what was happening and roughly
 when are facts about the photograph. They are not facts about a recording, and
-they do not need one: the fields work whether or not a sitting is running, and
+they do not need one: the fields work whether or not a session is running, and
 what is typed is written when you move to the next photograph.
 
 **This is the one file phostor rewrites.** Everything else under `sidecars/` is
 written once and afterwards only added to. This file holds what is currently
-known rather than a record of one sitting, so it is replaced as that changes.
+known rather than a record of one session, so it is replaced as that changes.
 Hand-edit it freely; just expect the app to overwrite your edit if you then
 change the same photograph's fields on screen.
 
 Kept separate from EXIF, which on a scanned print records the date of the scan.
 
 Earlier versions of phostor wrote these four fields into each visit instead,
-which meant they could only be entered during a sitting. Those older sidecars
+which meant they could only be entered during a session. Those older sidecars
 are still read: a photograph with no `tags.yml` falls back to its most recent
 visit, so nothing already recorded is lost, and the first edit writes the file.
 
@@ -279,7 +279,7 @@ The **only path you must set** is `photo_root`. A phostor project is a
 *directory*, and `config.yml` lives inside it — the work directory *is* the
 directory the config is in, so there is no `work_dir:` key to keep in step.
 
-- `title` — shown in the browser title bar and each sitting's `session.yml`.
+- `title` — shown in the browser title bar and each session's `session.yml`.
 - `display_size` / `thumb_size` — longest edge of the pre-rendered copies.
   `display_size` defaults to 4096, for a 4K display; lower it to 2048 for a
   smaller screen, or if rendering takes too long.
@@ -305,7 +305,7 @@ phostor does not delete it. `ph_status()` reports them.
 Chunks from a single recorder concatenate into a valid file, so no `ffmpeg` or
 muxing step is needed: Ogg and WebM are streams of self-framing blocks, and MP4
 arrives as an init segment followed by self-contained fragments. phostor pins
-the recording format for the sitting for the same reason.
+the recording format for the session for the same reason.
 
 Chunks are acknowledged one at a time, and an acknowledgement is matched
 against the chunk in flight. Shiny coalesces repeated writes to one input
@@ -321,21 +321,21 @@ still arrives late is appended to the finished file rather than dropped;
 chunks belonging to a discarded visit are dropped.
 
 The browser also counts the bytes it handed over, and the server compares that
-with the file it wrote. A shortfall is shown in the sitting bar and recorded as
-`bytes_expected` in the sidecar, because a sitting cannot be repeated. A write
+with the file it wrote. A shortfall is shown in the session bar and recorded as
+`bytes_expected` in the sidecar, because a session cannot be repeated. A write
 that fails outright, and a recorder that stops being able to record, are both
 said out loud there too rather than passing in silence.
 
 Because chunks from two recorders cannot be concatenated, a visit records from
 one recorder and one microphone throughout. **Check microphone** therefore
-listens to the microphone a sitting already has rather than reopening it, and
-the input picker is locked until the sitting is paused.
+listens to the microphone a session already has rather than reopening it, and
+the input picker is locked until the session is paused.
 
 One case is not recovered: closing the browser tab mid-visit loses whatever
 audio is still queued in the page. What reached disk is kept — the visit's
 file is renamed and its sidecar written — but no total arrives from the
 browser, so `bytes_expected` is empty and nothing flags the shortfall. End the
-sitting rather than closing the tab.
+session rather than closing the tab.
 
 ## Transcripts
 
@@ -427,7 +427,7 @@ Without it names are still saved, but they will not spread — the app says so
 when you name a phrase, and `ph_preflight()` lists it.
 
 Under each phrase of a transcript is a small chip. Click it and say who spoke.
-Naming one phrase re-works the whole sitting, so the names spread to the other
+Naming one phrase re-works the whole session, so the names spread to the other
 photographs while you are still labelling, and a note tells you how well it is
 doing. Nothing to run, and no need to leave the app.
 
@@ -437,8 +437,8 @@ leaving out the only example a voice has leaves nothing to recognise it by.
 From a terminal, over a whole project:
 
 ```sh
-phostor speakers          # the latest sitting
-phostor speakers --all    # every sitting
+phostor speakers          # the latest session
+phostor speakers --all    # every session
 ```
 
 ```r
@@ -457,12 +457,12 @@ voices, in your own room. Run it before trusting anything automatic. Automatic
 names are shown dimmed; correcting one makes it yours, and teaches the next
 pass.
 
-**A set of voices reaches only within its sitting.** This is the one rule that
+**A set of voices reaches only within its session.** This is the one rule that
 matters. The same voices, learned from a clean reading and identified across a
 room, were named correctly two times in eight; learned from the room itself,
 eight times in eight. Labelling phrases from the recording guarantees the match,
 because the examples and the speech come from the same microphone in the same
-room on the same day. Labels from one sitting are never used on another.
+room on the same day. Labels from one session are never used on another.
 
 Two kinds of phrase get no name rather than a guess: those too short to carry a
 voice, and those where the best match does not beat the second by enough.
@@ -484,7 +484,7 @@ run two voices into one phrase, the name will be whichever it sounds more like.
   or contains `photo_root` — case-insensitively where the filesystem is, since
   `/Volumes/Photo` and `/Volumes/photo` are one directory on APFS.
 - Every path phostor writes to is built from the work directory.
-- The test suite drives a scripted sitting through the real app server and
+- The test suite drives a scripted session through the real app server and
   asserts that every file under the photo directory is byte-for-byte unchanged
   afterwards.
 

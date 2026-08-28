@@ -19,7 +19,7 @@ The path written, or \code{NA_character_} when nothing was, invisibly.
 \description{
 Replaces \code{tags.yml}. Unlike a visit sidecar, this file is meant to be
 rewritten: it holds what is currently known about the photograph rather than
-a record of one sitting.
+a record of one session.
 }
 \details{
 Writes nothing when every field is empty and no file exists yet, so paging

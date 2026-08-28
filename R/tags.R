@@ -16,7 +16,7 @@
 # rule that holds for everything around it.
 #
 # Tags were once written into each visit's sidecar, which meant they could only
-# be entered while a sitting was running. Those older sidecars are still read:
+# be entered while a session was running. Those older sidecars are still read:
 # a photograph with no tags.yml falls back to its most recent visit, so nothing
 # recorded before this existed is lost, and the first edit writes the file.
 
@@ -81,7 +81,7 @@ ph_tags <- function(config, rel_path) {
   if (file.exists(path)) {
     x <- tryCatch(yaml::read_yaml(path), error = function(e) NULL)
     if (is.list(x)) return(ph_tags_clean(x))
-    # A corrupt or hand-broken file is not worth stopping a sitting for; fall
+    # A corrupt or hand-broken file is not worth stopping a session for; fall
     # through to the visits, which are still readable.
   }
   last <- ph_last_visit(cfg, rel_path)
@@ -93,7 +93,7 @@ ph_tags <- function(config, rel_path) {
 #'
 #' Replaces `tags.yml`. Unlike a visit sidecar, this file is meant to be
 #' rewritten: it holds what is currently known about the photograph rather than
-#' a record of one sitting.
+#' a record of one session.
 #'
 #' Writes nothing when every field is empty and no file exists yet, so paging
 #' through photographs does not leave one behind on each.

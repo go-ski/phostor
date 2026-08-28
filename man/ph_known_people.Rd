@@ -14,7 +14,7 @@ A sorted character vector of unique names.
 }
 \description{
 Reads the \code{people} field of every \code{tags.yml} and every visit sidecar. Both,
-because a name typed outside a sitting only ever reaches \code{tags.yml}, and a
+because a name typed outside a session only ever reaches \code{tags.yml}, and a
 name from before tags had their own file only ever reached a sidecar. At a
 few hundred photographs this is fast enough to call whenever the app needs
 it.

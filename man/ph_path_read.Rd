@@ -2,7 +2,7 @@
 % Please edit documentation in R/path.R
 \name{ph_path_read}
 \alias{ph_path_read}
-\title{Read a sitting's path.}
+\title{Read a session's path.}
 \usage{
 ph_path_read(session_dir)
 }
@@ -13,7 +13,7 @@ ph_path_read(session_dir)
 A data.frame with the columns of \code{path.tsv}; empty if there is none.
 }
 \description{
-Read a sitting's path.
+Read a session's path.
 }
 \examples{
 \dontrun{

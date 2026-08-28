@@ -2,14 +2,14 @@
 % Please edit documentation in R/path.R
 \name{ph_path_new}
 \alias{ph_path_new}
-\title{Start a new sitting.}
+\title{Start a new session.}
 \usage{
 ph_path_new(config = NULL, title = NULL)
 }
 \arguments{
 \item{config}{A work directory, a config path, or a config list.}
 
-\item{title}{Title for this sitting; defaults to the project title.}
+\item{title}{Title for this session; defaults to the project title.}
 }
 \value{
 The session directory, invisibly.

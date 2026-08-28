@@ -43,13 +43,13 @@ test('typing in a field does not steal the arrow keys', async ({ page }) => {
   await expect(page.locator('#place')).toHaveValue(/Elgol$/);
 });
 
-test('Play walks the sitting back in the order it was recorded', async ({ page }) => {
+test('Play walks the session back in the order it was recorded', async ({ page }) => {
   await page.goto('/');
   await page.waitForSelector('.ph-tree');
-  // Play appears only once a sitting exists. 01-sitting.spec.js normally
+  // Play appears only once a session exists. 01-session.spec.js normally
   // leaves one; record one here so this file also runs on its own
   // (tests/browser/run.sh 02-replay).
-  if (H.sessionCount() === 0) await H.recordShortSitting(page);
+  if (H.sessionCount() === 0) await H.recordShortSession(page);
   await page.waitForSelector('#play');
 
   const seen = [];
@@ -64,12 +64,12 @@ test('Play walks the sitting back in the order it was recorded', async ({ page }
 
   await page.click('#play');
   await page.waitForSelector('#play_stop');
-  // The recorded sitting held three visits; playback advances through them.
+  // The recorded session held three visits; playback advances through them.
   await expect.poll(() => seen.length, { timeout: 45000 }).toBeGreaterThanOrEqual(2);
   const strip = await page.$eval('#ph-play-fill',
                                  (e) => parseFloat(e.style.width) || 0);
   expect(strip).toBeGreaterThan(0);
-  // A short sitting can reach its end before we get here, which replaces Stop
+  // A short session can reach its end before we get here, which replaces Stop
   // with the Play control again. Both are valid ends to playback.
   if (await page.locator('#play_stop').count()) await page.click('#play_stop');
 });

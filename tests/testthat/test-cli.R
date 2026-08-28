@@ -39,7 +39,7 @@ test_that("init and status run end to end from the command line", {
 
   out <- suppressMessages(ph_cli(c("status", "--work", work)))
   expect_equal(out$photos, 4L)
-  expect_equal(out$sittings, 0L)
+  expect_equal(out$sessions, 0L)
   expect_equal(out$visits, 0L)
 })
 
@@ -51,6 +51,6 @@ test_that("status counts what a project holds", {
   out <- suppressMessages(ph_status(p$cfg))
   expect_equal(out$visits, 2L)
   expect_equal(out$people, 3L)
-  expect_equal(out$sittings, 1L)
+  expect_equal(out$sessions, 1L)
   expect_equal(out$orphans, 0L)
 })

@@ -9,8 +9,8 @@ ph_speakers_check(config, session_dir, quiet = FALSE)
 \arguments{
 \item{config}{A work directory, a config path, or a config list.}
 
-\item{session_dir}{A sitting, from \code{\link[=ph_sessions]{ph_sessions()}}. Voices are learned within
-one sitting: the same room, microphone and day, which is what makes the
+\item{session_dir}{A session, from \code{\link[=ph_sessions]{ph_sessions()}}. Voices are learned within
+one session: the same room, microphone and day, which is what makes the
 examples comparable to the speech they are matched against.}
 
 \item{quiet}{Suppress the report.}

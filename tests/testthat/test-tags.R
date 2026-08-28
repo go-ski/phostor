@@ -96,7 +96,7 @@ test_that("a corrupt tags.yml falls back rather than raising", {
   p <- make_project()
   ph_write_sidecar(p$cfg, "top.jpg", 1L, list(place = "Elgol"))
   writeLines("{{ not yaml", file.path(ph_visit_dir(p$cfg, "top.jpg"), "tags.yml"))
-  # A sitting must not stop because a file was hand-edited badly.
+  # A session must not stop because a file was hand-edited badly.
   expect_equal(ph_tags(p$cfg, "top.jpg")$place, "Elgol")
 })
 
@@ -128,12 +128,12 @@ test_that("hand-edited tags.yml is read back as written", {
   expect_equal(t$event, "")
 })
 
-test_that("autocomplete sees names typed outside a sitting", {
+test_that("autocomplete sees names typed outside a session", {
   p <- make_project()
   ph_write_tags(p$cfg, "top.jpg", list(people = "Nana Vera"))
   ph_write_sidecar(p$cfg, "Trips/Skye/a b.jpg", 1L,
                    list(people = "Uncle Stefan"))
-  # Both sources, because a name typed outside a sitting only ever reaches
+  # Both sources, because a name typed outside a session only ever reaches
   # tags.yml and a name from before this only ever reached a sidecar.
   expect_equal(ph_known_people(p$cfg), c("Nana Vera", "Uncle Stefan"))
 })

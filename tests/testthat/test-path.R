@@ -1,4 +1,4 @@
-test_that("a sitting writes a header and a start row", {
+test_that("a session writes a header and a start row", {
   p <- make_project()
   d <- ph_path_new(p$cfg)
   expect_true(file.exists(file.path(d, "session.yml")))
@@ -10,7 +10,7 @@ test_that("a sitting writes a header and a start row", {
   expect_equal(meta$photo_root, p$cfg$photo_root)
 })
 
-test_that("two sittings in one minute get separate directories", {
+test_that("two sessions in one minute get separate directories", {
   p <- make_project()
   a <- ph_path_new(p$cfg)
   b <- ph_path_new(p$cfg)
@@ -35,7 +35,7 @@ test_that("the path records what happened, in order", {
   expect_true(all(nzchar(unlist(x))))
 })
 
-test_that("elapsed time is measured from the sitting's own first row", {
+test_that("elapsed time is measured from the session's own first row", {
   p <- make_project()
   d <- ph_path_new(p$cfg)
   ph_path_append(d, "show", rel_path = "top.jpg", visit = 1L,

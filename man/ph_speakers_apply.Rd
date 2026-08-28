@@ -9,7 +9,7 @@ ph_speakers_apply(config, session_dir, quiet = FALSE)
 \arguments{
 \item{config}{A work directory, a config path, or a config list.}
 
-\item{session_dir}{A sitting, from \code{\link[=ph_sessions]{ph_sessions()}}.}
+\item{session_dir}{A session, from \code{\link[=ph_sessions]{ph_sessions()}}.}
 
 \item{quiet}{Suppress the report.}
 }
@@ -18,7 +18,7 @@ Invisibly, a data.frame of what was named, with the margin behind
 each decision.
 }
 \description{
-Learns the voices from the hand-labelled phrases in this sitting and names
+Learns the voices from the hand-labelled phrases in this session and names
 the rest. Refuses two kinds of phrase rather than guessing: those too short
 to carry a voice, and those where the best match barely beats the second.
 }

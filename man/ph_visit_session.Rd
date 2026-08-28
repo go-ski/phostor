@@ -2,7 +2,7 @@
 % Please edit documentation in R/speakers.R
 \name{ph_visit_session}
 \alias{ph_visit_session}
-\title{The sitting a visit was recorded in.}
+\title{The session a visit was recorded in.}
 \usage{
 ph_visit_session(config, rel_path, visit)
 }
@@ -14,13 +14,13 @@ ph_visit_session(config, rel_path, visit)
 \item{visit}{Visit number.}
 }
 \value{
-The session directory, or \code{NULL} when the visit records no sitting
-or the sitting is gone.
+The session directory, or \code{NULL} when the visit records no session
+or the session is gone.
 }
 \description{
 Every sidecar records it, and it is what ties a photograph to the others
 discussed alongside it — same room, same microphone, same day. Voices are
-learned within a sitting, so this is how both the app and the command line
+learned within a session, so this is how both the app and the command line
 know which recordings belong together.
 }
 \examples{

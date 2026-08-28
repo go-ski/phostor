@@ -59,7 +59,7 @@ async function seekTo(page, visit, t) {
 test('a transcript appears under the photograph it belongs to', async ({ page }) => {
   await page.goto('/');
   await page.waitForSelector('.ph-tree');
-  if (H.sessionCount() === 0) await H.recordShortSitting(page);
+  if (H.sessionCount() === 0) await H.recordShortSession(page);
   const { id, visit } = plantTranscript();
 
   await page.reload();
@@ -80,7 +80,7 @@ test('a transcript appears under the photograph it belongs to', async ({ page })
 test('the words light up as the recording reaches them', async ({ page }) => {
   await page.goto('/');
   await page.waitForSelector('.ph-tree');
-  if (H.sessionCount() === 0) await H.recordShortSitting(page);
+  if (H.sessionCount() === 0) await H.recordShortSession(page);
   const { id, visit } = plantTranscript();
 
   await page.reload();
@@ -110,7 +110,7 @@ test('the words light up as the recording reaches them', async ({ page }) => {
 test('clicking a phrase seeks the recording to it', async ({ page }) => {
   await page.goto('/');
   await page.waitForSelector('.ph-tree');
-  if (H.sessionCount() === 0) await H.recordShortSitting(page);
+  if (H.sessionCount() === 0) await H.recordShortSession(page);
   const { id, visit } = plantTranscript();
 
   await page.reload();
@@ -159,7 +159,7 @@ function plantAll() {
 test('the panel follows the playback instead of staying behind', async ({ page }) => {
   await page.goto('/');
   await page.waitForSelector('.ph-tree');
-  if (H.sessionCount() === 0) await H.recordShortSitting(page);
+  if (H.sessionCount() === 0) await H.recordShortSession(page);
   const planted = plantAll();
   expect(planted.length, 'nothing recorded to play back').toBeGreaterThan(1);
 
@@ -198,10 +198,10 @@ test('the panel follows the playback instead of staying behind', async ({ page }
   if (await page.locator('#play_stop').count()) await page.click('#play_stop');
 });
 
-test('the words light up while the sitting plays back', async ({ page }) => {
+test('the words light up while the session plays back', async ({ page }) => {
   await page.goto('/');
   await page.waitForSelector('.ph-tree');
-  if (H.sessionCount() === 0) await H.recordShortSitting(page);
+  if (H.sessionCount() === 0) await H.recordShortSession(page);
   const planted = plantAll();
 
   await page.reload();
@@ -239,7 +239,7 @@ test('the words light up while the sitting plays back', async ({ page }) => {
 test('a phrase can be told who said it', async ({ page }) => {
   await page.goto('/');
   await page.waitForSelector('.ph-tree');
-  if (H.sessionCount() === 0) await H.recordShortSitting(page);
+  if (H.sessionCount() === 0) await H.recordShortSession(page);
   const { id, visit } = plantTranscript();
 
   await page.reload();
@@ -291,7 +291,7 @@ test('a name given on one photograph is offered on the next', async ({ page }) =
   // a name had to be retyped on every one of them.
   await page.goto('/');
   await page.waitForSelector('.ph-tree');
-  if (H.sessionCount() === 0) await H.recordShortSitting(page);
+  if (H.sessionCount() === 0) await H.recordShortSession(page);
   const planted = plantAll();
   expect(planted.length).toBeGreaterThan(1);
 
@@ -307,7 +307,7 @@ test('a name given on one photograph is offered on the next', async ({ page }) =
   await page.click('#speaker_save');
   await expect(page.locator('.modal-content')).toHaveCount(0);
 
-  // A different photograph of the same sitting: the name is on offer.
+  // A different photograph of the same session: the name is on offer.
   await H.openPhoto(page, planted[1].id);
   await page.waitForSelector(`#ph-tx-${planted[1].visit} .ph-spk`);
   await page.locator(`#ph-tx-${planted[1].visit} .ph-spk`).first().click();
@@ -327,7 +327,7 @@ test('naming a phrase says why the names will not spread', async ({ page }) => {
   test.skip(H.hasTuneR(), 'tuneR is installed, so it can spread and says nothing');
   await page.goto('/');
   await page.waitForSelector('.ph-tree');
-  if (H.sessionCount() === 0) await H.recordShortSitting(page);
+  if (H.sessionCount() === 0) await H.recordShortSession(page);
   const { id, visit } = plantTranscript();
   // Earlier specs in this file have named phrases on this very visit. This one
   // is about the notice, not about what they left behind, so it starts clean.

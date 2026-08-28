@@ -128,7 +128,7 @@ ph_mic_advice <- function(why, browser = NULL) {
     nocodec = paste(
       sprintf("%s cannot record Opus in WebM, the format phostor stores.", b),
       "Use Chrome or Firefox; Safari does not support it."),
-    # Raised mid-sitting, when a microphone that was working stops being
+    # Raised mid-session, when a microphone that was working stops being
     # available. Said plainly because nothing is being recorded from here on.
     norecorder = paste(
       "Recording has stopped: the microphone is no longer available to",

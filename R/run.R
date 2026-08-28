@@ -91,7 +91,7 @@ ph_app <- function(config = NULL, port = 7655L,
 
   # Compile the transcriber now rather than when the first photograph is left:
   # the build takes about a second, and there it would land in the middle of a
-  # sitting with the Shiny loop waiting on it. Cached after the first run, so
+  # session with the Shiny loop waiting on it. Cached after the first run, so
   # this is usually a no-op, and a machine that cannot build one carries on
   # recording without transcripts.
   if (isTRUE(cfg$transcribe)) ph_transcribe_build(quiet = TRUE)
@@ -142,7 +142,7 @@ ph_status <- function(config = NULL) {
   waiting <- ph_untranscribed(cfg)
 
   message("  photographs: ", nrow(idx))
-  message("  sittings   : ", nrow(sess),
+  message("  sessions   : ", nrow(sess),
           if (nrow(sess)) paste0(" (latest ", sess$session[1], ")") else "")
   message("  visits     : ", sidecars)
   message("  people     : ", length(people),
@@ -170,7 +170,7 @@ ph_status <- function(config = NULL) {
     message("               unused and not deleted by phostor; ",
             "remove them when you like")
   }
-  invisible(list(photos = nrow(idx), sittings = nrow(sess), visits = sidecars,
+  invisible(list(photos = nrow(idx), sessions = nrow(sess), visits = sidecars,
                  people = length(people), orphans = orphans,
                  untranscribed = waiting, old_renders = length(old_renders),
                  named = named$named))
@@ -180,7 +180,7 @@ ph_status <- function(config = NULL) {
 # command line
 # ---------------------------------------------------------------------------
 
-# Name the speakers in the latest sitting, or in every one. Reports how well it
+# Name the speakers in the latest session, or in every one. Reports how well it
 # does on the phrases a person named before spreading anything.
 # What is worth saying as the app starts, beyond the address. Its own function
 # so it can be tested without binding a port and starting a server.
@@ -199,7 +199,7 @@ ph_speakers_cli <- function(config = NULL, all = FALSE) {
   cfg <- ph_as_config(config)
   sess <- ph_sessions(cfg)
   if (!nrow(sess)) {
-    message("phostor: no sittings yet")
+    message("phostor: no sessions yet")
     return(invisible(NULL))
   }
   dirs <- if (isTRUE(all)) sess$dir else sess$dir[1]

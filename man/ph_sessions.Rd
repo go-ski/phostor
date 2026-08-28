@@ -2,7 +2,7 @@
 % Please edit documentation in R/path.R
 \name{ph_sessions}
 \alias{ph_sessions}
-\title{The sittings recorded in a project, newest first.}
+\title{The sessions recorded in a project, newest first.}
 \usage{
 ph_sessions(config = NULL)
 }
@@ -13,7 +13,7 @@ ph_sessions(config = NULL)
 A data.frame with \code{session}, \code{dir}, \code{title}, \code{started}, \code{visits}.
 }
 \description{
-The sittings recorded in a project, newest first.
+The sessions recorded in a project, newest first.
 }
 \examples{
 \dontrun{

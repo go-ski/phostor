@@ -2,7 +2,7 @@
 % Please edit documentation in R/path.R
 \name{ph_path_append}
 \alias{ph_path_append}
-\title{Append one event to a sitting's path.}
+\title{Append one event to a session's path.}
 \usage{
 ph_path_append(
   session_dir,
@@ -26,7 +26,7 @@ ph_path_append(
 
 \item{duration}{Visit duration in seconds, if any.}
 
-\item{started}{The sitting's start time, used only for the \code{start} row.}
+\item{started}{The session's start time, used only for the \code{start} row.}
 
 \item{time}{Event time; defaults to now.}
 }
@@ -34,7 +34,7 @@ ph_path_append(
 The row written, invisibly, as a character vector.
 }
 \description{
-Append one event to a sitting's path.
+Append one event to a session's path.
 }
 \examples{
 \dontrun{

@@ -30,7 +30,7 @@ async function setTags(page, { place, event, when }) {
   if (when !== undefined) await page.fill('#when', when);
 }
 
-test('tags are kept with no sitting running', async ({ page }) => {
+test('tags are kept with no session running', async ({ page }) => {
   await page.goto('/');
   await page.waitForSelector('.ph-tree');
   const ids = await H.photoIds(page);
@@ -40,7 +40,7 @@ test('tags are kept with no sitting running', async ({ page }) => {
   const visitsBefore = H.visitFiles('.yml').length;
   const badgeBefore = await page.locator(`#ph-p-${ids[0]} .ph-b`).count();
 
-  // No Start sitting anywhere in this spec: the fields must work on their own.
+  // No Start session anywhere in this spec: the fields must work on their own.
   await openTagged(page, ids[0]);
   await setTags(page, { place: 'Elgol, Isle of Skye',
                         event: 'the 1974 camping trip', when: 'summer 1974' });
@@ -102,7 +102,7 @@ test('clearing a field sticks rather than coming back', async ({ page }) => {
   await expect(page.locator('#when')).toHaveValue('');
 });
 
-test('a name typed outside a sitting reaches the autocomplete', async ({ page }) => {
+test('a name typed outside a session reaches the autocomplete', async ({ page }) => {
   await page.goto('/');
   await page.waitForSelector('.ph-tree');
   const ids = await H.photoIds(page);

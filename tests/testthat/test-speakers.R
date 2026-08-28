@@ -1,4 +1,4 @@
-# Speaker naming needs real speech to mean anything, so these build a sitting
+# Speaker naming needs real speech to mean anything, so these build a session
 # out of two macOS voices, where the truth is known by construction. Skipped
 # wherever the parts are missing, as the transcription tests already are.
 
@@ -14,9 +14,9 @@ skip_without_speech <- function() {
   skip_if(is.na(ph_transcribe_build(quiet = TRUE)), "helper did not build")
 }
 
-# A sitting of `n` visits per voice, each visit one recording of that voice
+# A session of `n` visits per voice, each visit one recording of that voice
 # with a transcript of `per` phrases. Truth is the voice that spoke it.
-make_sitting <- function(p, per = 3L) {
+make_session <- function(p, per = 3L) {
   lines <- c(
     "The old house stood at the end of a long lane, shaded by elms.",
     "She kept the letters in a tin box under the bed, tied with a ribbon.",
@@ -116,7 +116,7 @@ test_that("names with awkward characters survive the round trip", {
 test_that("two voices are told apart, and the check says how well", {
   skip_without_speech()
   p <- make_project()
-  s <- make_sitting(p)
+  s <- make_session(p)
 
   # Label the first phrase of each recording; the rest are for it to work out.
   for (k in 1:2) {
@@ -142,7 +142,7 @@ test_that("two voices are told apart, and the check says how well", {
 test_that("hand labels are never overwritten by the machine", {
   skip_without_speech()
   p <- make_project()
-  s <- make_sitting(p)
+  s <- make_session(p)
   for (k in 1:2) {
     timed <- ph_transcript_timed(p$cfg, s$rel[k], 1L)
     for (i in 1:2) {
@@ -165,7 +165,7 @@ test_that("scrambled labels do no better than chance", {
   # scoring rather than findings. This is the assertion that catches that.
   skip_without_speech()
   p <- make_project()
-  s <- make_sitting(p)
+  s <- make_session(p)
   for (k in 1:2) {
     timed <- ph_transcript_timed(p$cfg, s$rel[k], 1L)
     for (i in seq_len(nrow(timed))) {
@@ -197,23 +197,23 @@ test_that("scrambled labels do no better than chance", {
   expect_lt(ph_speakers_check(p$cfg, s$dir, quiet = TRUE)$accuracy, 0.9)
 })
 
-test_that("a visit knows which sitting it belongs to", {
+test_that("a visit knows which session it belongs to", {
   p <- make_project()
   sess <- ph_path_new(p$cfg, title = "one")
   ph_write_sidecar(p$cfg, "top.jpg", 1L, list(session = basename(sess)))
   expect_equal(ph_visit_session(p$cfg, "top.jpg", 1L), sess)
 
-  # Recorded outside any sitting, or a sitting since removed.
+  # Recorded outside any session, or a session since removed.
   ph_write_sidecar(p$cfg, "top.jpg", 2L, list())
   expect_null(ph_visit_session(p$cfg, "top.jpg", 2L))
   ph_write_sidecar(p$cfg, "top.jpg", 3L, list(session = "2000-01-01-0000"))
   expect_null(ph_visit_session(p$cfg, "top.jpg", 3L))
 })
 
-test_that("names are offered from the whole sitting, not one photograph", {
+test_that("names are offered from the whole session, not one photograph", {
   skip_without_speech()
   p <- make_project()
-  s <- make_sitting(p)
+  s <- make_session(p)
   timed <- ph_transcript_timed(p$cfg, s$rel[1], 1L)
   ph_speaker_label(p$cfg, s$rel[1], 1L, start = timed$start[1], speaker = "Marty")
 
@@ -224,10 +224,10 @@ test_that("names are offered from the whole sitting, not one photograph", {
                 ph_speakers_names(p$cfg, ph_visit_session(p$cfg, s$rel[2], 1L)))
 })
 
-test_that("naming a phrase spreads to the other photographs of the sitting", {
+test_that("naming a phrase spreads to the other photographs of the session", {
   skip_without_speech()
   p <- app_project()
-  s <- make_sitting(p)
+  s <- make_session(p)
   idx <- ph_read_index(p$cfg)
   # Two names on the first photograph, one on the second: enough to learn from.
   t1 <- ph_transcript_timed(p$cfg, s$rel[1], 1L)
@@ -252,7 +252,7 @@ test_that("naming a phrase spreads to the other photographs of the sitting", {
 test_that("a hand label survives the spreading", {
   skip_without_speech()
   p <- app_project()
-  s <- make_sitting(p)
+  s <- make_session(p)
   idx <- ph_read_index(p$cfg)
   t1 <- ph_transcript_timed(p$cfg, s$rel[1], 1L)
   t2 <- ph_transcript_timed(p$cfg, s$rel[2], 1L)
@@ -275,12 +275,12 @@ test_that("a hand label survives the spreading", {
   expect_equal(kept$source, "manual")
 })
 
-test_that("the second run over a sitting is faster than the first", {
+test_that("the second run over a session is faster than the first", {
   # Decoding used to happen three times per run, invisibly. The cache is what
   # makes naming-as-you-label bearable, so its absence must be a failure.
   skip_without_speech()
   p <- make_project()
-  s <- make_sitting(p)
+  s <- make_session(p)
   for (k in 1:2) {
     timed <- ph_transcript_timed(p$cfg, s$rel[k], 1L)
     ph_speaker_label(p$cfg, s$rel[k], 1L, start = timed$start[1],
@@ -318,10 +318,10 @@ test_that("naming a phrase does nothing extra when tuneR is absent", {
   expect_equal(ph_speakers_read(p$cfg, rel, 1L)$speaker, "Beth")
 })
 
-test_that("the command line names the latest sitting", {
+test_that("the command line names the latest session", {
   skip_without_speech()
   p <- make_project()
-  s <- make_sitting(p)
+  s <- make_session(p)
   for (k in 1:2) {
     timed <- ph_transcript_timed(p$cfg, s$rel[k], 1L)
     ph_speaker_label(p$cfg, s$rel[k], 1L, start = timed$start[1],

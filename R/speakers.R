@@ -8,7 +8,7 @@
 #     voices, enrolled clean and identified across a room, scored 2/8; enrolled
 #     in the room, 8/8. So the examples come from the recordings themselves --
 #     a few phrases labelled by hand -- and a set of voices reaches only within
-#     the sitting it was learned from.
+#     the session it was learned from.
 #   * Cepstral mean normalisation, the textbook defence against exactly that
 #     mismatch, measured worse here (6/8 against 8/8). With seconds of audio the
 #     speaker lives in the means it removes. So it is not used.
@@ -22,16 +22,16 @@
 ph_speaker_cols <- c("start", "end", "speaker", "source", "confidence")
 
 # A phrase shorter than this yields too few frames to say anything about a
-# voice. Thirteen per cent of the phrases in a real sitting are under a second.
+# voice. Thirteen per cent of the phrases in a real session are under a second.
 ph_speaker_min_secs <- 0.6
 # How far the best match must beat the second before it is worth saying. Not a
 # fixed number: on real voices the margins are tiny and depend on how many
-# people are in the sitting and how alike they sound. Measured on one family's
+# people are in the session and how alike they sound. Measured on one family's
 # recordings, the margin was 0.0095 when the guess was right and 0.0011 when it
 # was wrong -- it separates them well, but a threshold picked in advance names
-# either everything or nothing. So it is calibrated per sitting from the
+# either everything or nothing. So it is calibrated per session from the
 # phrases a person named, and this is only the floor of last resort, for a
-# sitting with too few labels to calibrate from.
+# session with too few labels to calibrate from.
 ph_speaker_min_margin <- 1e-4
 
 ph_speakers_path <- function(cfg, rel_path, visit) {
@@ -46,18 +46,18 @@ ph_need_tuneR <- function() {
   }
 }
 
-#' The sitting a visit was recorded in.
+#' The session a visit was recorded in.
 #'
 #' Every sidecar records it, and it is what ties a photograph to the others
 #' discussed alongside it — same room, same microphone, same day. Voices are
-#' learned within a sitting, so this is how both the app and the command line
+#' learned within a session, so this is how both the app and the command line
 #' know which recordings belong together.
 #'
 #' @param config A work directory, a config path, or a config list.
 #' @param rel_path Path of the photograph relative to `photo_root`.
 #' @param visit Visit number.
-#' @return The session directory, or `NULL` when the visit records no sitting
-#'   or the sitting is gone.
+#' @return The session directory, or `NULL` when the visit records no session
+#'   or the session is gone.
 #' @examples
 #' \dontrun{
 #' ph_visit_session("~/phostor/family", "Trips/Skye/img_0421.jpg", 1)
@@ -74,9 +74,9 @@ ph_visit_session <- function(config, rel_path, visit) {
   dir
 }
 
-#' Every name used in a sitting.
+#' Every name used in a session.
 #'
-#' What the app offers when asking who spoke. Drawn from the whole sitting
+#' What the app offers when asking who spoke. Drawn from the whole session
 #' rather than the photograph on screen: the same people are talking throughout,
 #' and having to retype a name on each photograph is how this felt like a blank
 #' slate.
@@ -84,7 +84,7 @@ ph_visit_session <- function(config, rel_path, visit) {
 #' Reads only the small label files, never the audio.
 #'
 #' @param config A work directory, a config path, or a config list.
-#' @param session_dir A sitting, from [ph_sessions()].
+#' @param session_dir A session, from [ph_sessions()].
 #' @return A sorted character vector of names, possibly empty.
 #' @examples
 #' \dontrun{
@@ -224,7 +224,7 @@ ph_named_counts <- function(cfg) {
 # --------------------------------------------------------------------------
 
 # Decoded recordings, for as long as this R session lasts. Naming spreads on
-# every label now, so the same sitting is worked over again and again: without
+# every label now, so the same session is worked over again and again: without
 # this each run decoded every recording three times -- twice in apply(), once
 # more in the check it calls.
 #
@@ -279,7 +279,7 @@ ph_cosine <- function(a, b) {
   sum(a * b) / d
 }
 
-# Every phrase of every visit in a sitting, with whatever label it carries.
+# Every phrase of every visit in a session, with whatever label it carries.
 ph_speaker_phrases <- function(cfg, session_dir) {
   pl <- ph_playlist(cfg, session_dir)
   if (!nrow(pl)) return(NULL)
@@ -339,8 +339,8 @@ ph_speaker_nearest <- function(f, prof) {
 #' often it is wrong has no business naming a family's recordings.
 #'
 #' @param config A work directory, a config path, or a config list.
-#' @param session_dir A sitting, from [ph_sessions()]. Voices are learned within
-#'   one sitting: the same room, microphone and day, which is what makes the
+#' @param session_dir A session, from [ph_sessions()]. Voices are learned within
+#'   one session: the same room, microphone and day, which is what makes the
 #'   examples comparable to the speech they are matched against.
 #' @param quiet Suppress the report.
 #' @return Invisibly, a list of `n`, `correct`, `accuracy`, `confusion` and
@@ -418,14 +418,14 @@ ph_speakers_check <- function(config, session_dir, quiet = FALSE) {
 
 #' Name the phrases nobody has labelled.
 #'
-#' Learns the voices from the hand-labelled phrases in this sitting and names
+#' Learns the voices from the hand-labelled phrases in this session and names
 #' the rest. Refuses two kinds of phrase rather than guessing: those too short
 #' to carry a voice, and those where the best match barely beats the second.
 #'
 #' Hand labels are never overwritten.
 #'
 #' @param config A work directory, a config path, or a config list.
-#' @param session_dir A sitting, from [ph_sessions()].
+#' @param session_dir A session, from [ph_sessions()].
 #' @param quiet Suppress the report.
 #' @return Invisibly, a data.frame of what was named, with the margin behind
 #'   each decision.

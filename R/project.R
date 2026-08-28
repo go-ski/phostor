@@ -5,7 +5,7 @@
 #   <work_dir>/config.history/       timestamped copies of prior config.yml
 #   <work_dir>/index.tsv             the catalogue
 #   <work_dir>/display/  thumbs/     pre-rendered copies, keyed by photo id
-#   <work_dir>/sessions/<stamp>/     session.yml + path.tsv, one per sitting
+#   <work_dir>/sessions/<stamp>/     session.yml + path.tsv, one per session
 #   <work_dir>/sidecars/<rel_path>/  a directory per photo, holding its visits
 #
 # `work_dir` is not a field in config.yml: it is where config.yml is. One

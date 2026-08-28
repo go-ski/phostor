@@ -2,7 +2,7 @@
 % Please edit documentation in R/path.R
 \name{ph_playlist}
 \alias{ph_playlist}
-\title{The playlist for one sitting.}
+\title{The playlist for one session.}
 \usage{
 ph_playlist(cfg, session_dir)
 }

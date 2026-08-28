@@ -130,7 +130,7 @@ ph_transcribe_build <- function(quiet = FALSE) {
 }
 
 # Every reason a visit might not be transcribed, in the order they are checked.
-# Returned rather than raised: a sitting must not stop because a transcript
+# Returned rather than raised: a session must not stop because a transcript
 # could not be made.
 ph_transcribe_why <- function(cfg, dir, visit, audio, force) {
   if (!isTRUE(cfg$transcribe)) return("off")
@@ -161,7 +161,7 @@ ph_has_transcript <- function(dir, visit) {
 #'
 #' Never raises. A visit that cannot be transcribed -- no audio, a WebM
 #' recording, no helper on this machine -- returns the reason instead, so the
-#' sitting carries on.
+#' session carries on.
 #'
 #' @param cfg A config list from [ph_config()].
 #' @param rel_path Path of the photograph relative to `photo_root`.

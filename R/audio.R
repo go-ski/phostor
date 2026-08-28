@@ -9,7 +9,7 @@
 # ffmpeg or muxing step is needed. This holds for every container the app will
 # use: WebM and Ogg are streams of self-framing blocks, and MP4 arrives as an
 # init segment followed by self-contained fragments. The app pins the recorder
-# to one format per sitting for the same reason -- see inst/shiny/app.R.
+# to one format per session for the same reason -- see inst/shiny/app.R.
 #
 # Which container it picks decides whether the recording can be transcribed:
 # AVFoundation reads MP4 and Ogg and cannot read WebM. See R/transcribe.R.

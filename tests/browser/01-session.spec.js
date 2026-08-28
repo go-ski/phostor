@@ -58,7 +58,7 @@ test('the microphone check finds the fake device and shows a level', async ({ pa
   await expect(page.locator('#ph-mic-advice')).toContainText(/Microphone open|Speak/);
   await expect(page.locator('#ph-mic-detail')).toContainText(/audio\/(mp4|ogg|webm)/);
 
-  // The three-second test recording uses the same MediaRecorder path a sitting
+  // The three-second test recording uses the same MediaRecorder path a session
   // does, and returns a playable blob.
   await page.click('#ph-mic-test');
   await page.waitForFunction(
@@ -72,7 +72,7 @@ test('the microphone check finds the fake device and shows a level', async ({ pa
   await H.micState(page, 'off');
 });
 
-test('a sitting records visits, and a revisit gets its own sidecar', async ({ page }) => {
+test('a session records visits, and a revisit gets its own sidecar', async ({ page }) => {
   await page.goto('/');
   await page.waitForSelector('.ph-tree');
   ids = await H.photoIds(page);
@@ -99,8 +99,8 @@ test('a sitting records visits, and a revisit gets its own sidecar', async ({ pa
   await H.openPhoto(page, ids[0]);          // a revisit
   await H.waitForVisitChunks(page);
 
-  await page.click('#stop_sitting');
-  await page.waitForSelector('.modal-content:has-text("Sitting ended")');
+  await page.click('#stop_session');
+  await page.waitForSelector('.modal-content:has-text("Session ended")');
   await page.click('.modal-footer button');
 
   // --- and now the disk ----------------------------------------------------
@@ -163,8 +163,8 @@ test('discard throws away the take and starts the photograph again', async ({ pa
     (k) => document.body.dataset.phVisit && document.body.dataset.phVisit !== k,
     key, { timeout: 20000 });
 
-  await page.click('#stop_sitting');
-  await page.waitForSelector('.modal-content:has-text("Sitting ended")');
+  await page.click('#stop_session');
+  await page.waitForSelector('.modal-content:has-text("Session ended")');
   await page.click('.modal-footer button');
 
   const rows = H.pathRows();
@@ -193,8 +193,8 @@ test('pause closes the visit and resume opens a new one', async ({ page }) => {
   await page.click('#resume');
   await H.micState(page, 'on');
 
-  await page.click('#stop_sitting');
-  await page.waitForSelector('.modal-content:has-text("Sitting ended")');
+  await page.click('#stop_session');
+  await page.waitForSelector('.modal-content:has-text("Session ended")');
   await page.click('.modal-footer button');
 
   const ev = H.pathRows().map((r) => r.event);
@@ -228,8 +228,8 @@ test('every byte the microphone produced reached a file', async ({ page }) => {
   await H.openPhoto(page, ids[2]);
   await H.waitForVisitChunks(page, 2);
 
-  await page.click('#stop_sitting');
-  await page.waitForSelector('.modal-content:has-text("Sitting ended")');
+  await page.click('#stop_session');
+  await page.waitForSelector('.modal-content:has-text("Session ended")');
   await page.click('.modal-footer button');
 
   // MediaRecorder counts what it handed to the page; the filesystem counts what
@@ -259,8 +259,8 @@ test('a visit shorter than one chunk still records its audio', async ({ page }) 
   await page.waitForFunction(() => !!document.body.dataset.phVisit);
   await H.openPhoto(page, ids[1]);
 
-  await page.click('#stop_sitting');
-  await page.waitForSelector('.modal-content:has-text("Sitting ended")');
+  await page.click('#stop_session');
+  await page.waitForSelector('.modal-content:has-text("Session ended")');
   await page.click('.modal-footer button');
 
   const audio = H.audioFiles();
@@ -270,10 +270,10 @@ test('a visit shorter than one chunk still records its audio', async ({ page }) 
 });
 
 // --- the protocol under interference ----------------------------------------
-// A sitting cannot be repeated, so the ways a recorder can be taken away
+// A session cannot be repeated, so the ways a recorder can be taken away
 // mid-visit matter as much as the happy path.
 
-test('checking the microphone mid-sitting does not cut the recording', async ({ page }) => {
+test('checking the microphone mid-session does not cut the recording', async ({ page }) => {
   await page.goto('/');
   await page.waitForSelector('.ph-tree');
   const ids = await H.photoIds(page);
@@ -287,10 +287,10 @@ test('checking the microphone mid-sitting does not cut the recording', async ({ 
 
   // Reopening the microphone here would hand the page a second MediaStream and
   // end the tracks the live recorder is reading, stopping it with nothing on
-  // screen to say so. The check must meter the stream the sitting already has.
+  // screen to say so. The check must meter the stream the session already has.
   await page.click('#mic_check_btn');
   await page.waitForSelector('#ph-mic-panel:visible');
-  await expect(page.locator('#ph-mic-sitting')).toBeVisible();
+  await expect(page.locator('#ph-mic-session')).toBeVisible();
   await expect(page.locator('#ph-mic-device')).toBeDisabled();
   await page.click('#ph-mic-close');
 
@@ -301,8 +301,8 @@ test('checking the microphone mid-sitting does not cut the recording', async ({ 
 
   await H.openPhoto(page, ids[1]);
   await H.waitForVisitChunks(page, 2);
-  await page.click('#stop_sitting');
-  await page.waitForSelector('.modal-content:has-text("Sitting ended")');
+  await page.click('#stop_session');
+  await page.waitForSelector('.modal-content:has-text("Session ended")');
   await page.click('.modal-footer button');
 
   const produced = await H.bytesProduced(page);
@@ -324,14 +324,14 @@ test('a visit whose recorder never reports stopping still finalises', async ({ p
   await H.waitForVisitChunks(page, 2);
 
   // Break the one signal the close path waits on. Unbounded, that wait leaves
-  // the visit unfinalised for ever: End sitting never answers and the .part is
+  // the visit unfinalised for ever: End session never answers and the .part is
   // never renamed.
   await page.evaluate(() => { window.PH.rec.onstop = function () {}; });
 
   await H.openPhoto(page, ids[1]);
   await H.waitForVisitChunks(page, 1);
-  await page.click('#stop_sitting');
-  await page.waitForSelector('.modal-content:has-text("Sitting ended")',
+  await page.click('#stop_session');
+  await page.waitForSelector('.modal-content:has-text("Session ended")',
                              { timeout: 30000 });
   await page.click('.modal-footer button');
 
@@ -359,10 +359,10 @@ test('a recorder that cannot start says so instead of showing REC', async ({ pag
   // The bar must stop claiming to record, and say what to do about it.
   await H.micState(page, 'error');
   await expect(page.locator('.ph-rec')).not.toHaveClass(/\bon\b/);
-  await expect(page.locator('#sitting_info')).toContainText(/microphone/i);
+  await expect(page.locator('#session_info')).toContainText(/microphone/i);
 
-  await page.click('#stop_sitting');
-  await page.waitForSelector('.modal-content:has-text("Sitting ended")');
+  await page.click('#stop_session');
+  await page.waitForSelector('.modal-content:has-text("Session ended")');
   await page.click('.modal-footer button');
   expect(H.visitFiles('.part').length).toBe(0);
 });

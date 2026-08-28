@@ -2,20 +2,20 @@
 % Please edit documentation in R/speakers.R
 \name{ph_speakers_names}
 \alias{ph_speakers_names}
-\title{Every name used in a sitting.}
+\title{Every name used in a session.}
 \usage{
 ph_speakers_names(config, session_dir)
 }
 \arguments{
 \item{config}{A work directory, a config path, or a config list.}
 
-\item{session_dir}{A sitting, from \code{\link[=ph_sessions]{ph_sessions()}}.}
+\item{session_dir}{A session, from \code{\link[=ph_sessions]{ph_sessions()}}.}
 }
 \value{
 A sorted character vector of names, possibly empty.
 }
 \description{
-What the app offers when asking who spoke. Drawn from the whole sitting
+What the app offers when asking who spoke. Drawn from the whole session
 rather than the photograph on screen: the same people are talking throughout,
 and having to retype a name on each photograph is how this felt like a blank
 slate.

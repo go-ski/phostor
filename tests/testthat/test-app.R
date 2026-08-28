@@ -129,13 +129,13 @@ test_that("the app never writes outside the work directory", {
 })
 
 
-test_that("a scripted sitting records visits, revisits and the path", {
+test_that("a scripted session records visits, revisits and the path", {
   # min_visit_seconds = 0 because no time passes under testServer and this
-  # sitting records no audio: without it every visit is too brief to keep.
+  # session records no audio: without it every visit is too brief to keep.
   p <- app_project(min_visit_seconds = 0)
   idx <- ph_read_index(p$cfg)
   # The app opens on the first photograph in tree order, and starting a
-  # sitting opens a visit for whatever is on screen. Drive from there.
+  # session opens a visit for whatever is on screen. Drive from there.
   ord <- ph_tree_order(idx)
   rel_of <- function(id) idx$rel_path[match(id, idx$id)]
   a <- ord[1]; b <- ord[2]
@@ -166,7 +166,7 @@ test_that("a scripted sitting records visits, revisits and the path", {
       rel = rel_of(a), people = list("Nana Vera", "Uncle Stefan"),
       place = "Elgol, again", event = "the camping trip",
       when = "summer 1974"))
-    session$setInputs(stop_sitting = 1)
+    session$setInputs(stop_session = 1)
   })
 
   # 1. The photographs were not touched.
@@ -222,7 +222,7 @@ test_that("a visit's audio is assembled from the chunks the browser sends", {
 
   shiny::testServer(app_dir_for(p), {
     session$setInputs(start = 1)
-    # Arming the microphone opens the first visit of the sitting: key "v1",
+    # Arming the microphone opens the first visit of the session: key "v1",
     # because open_visit() is what advances the counter.
     session$setInputs(mic_ready = list(ok = TRUE, mime = "audio/webm"))
 
@@ -240,7 +240,7 @@ test_that("a visit's audio is assembled from the chunks the browser sends", {
 
     session$setInputs(photo_pick = b)        # closes v1, awaits the browser
     session$setInputs(visit_done = list(key = "v1", at = 1))
-    session$setInputs(stop_sitting = 1)
+    session$setInputs(stop_session = 1)
     session$setInputs(visit_done = list(key = "v2", at = 2))
   })
 
@@ -255,7 +255,7 @@ test_that("a visit's audio is assembled from the chunks the browser sends", {
   expect_equal(ph_orphan_audio(p$cfg), character(0))
 })
 
-test_that("browsing without a sitting records nothing at all", {
+test_that("browsing without a session records nothing at all", {
   p <- app_project()
   idx <- ph_read_index(p$cfg)
   shiny::testServer(app_dir_for(p), {
@@ -276,7 +276,7 @@ test_that("a visit too brief to hold a conversation leaves only a path row", {
     session$setInputs(mic_ready = list(ok = FALSE, why = "test"))
     # No audio, nothing typed, and no time passes under testServer.
     session$setInputs(photo_pick = idx$id[2])
-    session$setInputs(stop_sitting = 1)
+    session$setInputs(stop_session = 1)
   })
   expect_equal(sum(ph_visit_counts(p$cfg, idx$rel_path)), 0L)
   path <- ph_path_read(ph_sessions(p$cfg)$dir[1])
@@ -294,7 +294,7 @@ test_that("something typed is kept, and does not manufacture a visit", {
     session$setInputs(tags_now = list(rel = rel, people = list("Ada"),
                                       place = "", event = "", when = ""))
     session$setInputs(photo_pick = idx$id[2])
-    session$setInputs(stop_sitting = 1)
+    session$setInputs(stop_session = 1)
   })
   expect_equal(ph_tags(p$cfg, rel)$people, "Ada")
   # The visit was too brief and recorded nothing, so there is no visit to
@@ -302,7 +302,7 @@ test_that("something typed is kept, and does not manufacture a visit", {
   expect_equal(ph_visit_counts(p$cfg, rel), 0L)
 })
 
-test_that("tags are kept with no sitting running at all", {
+test_that("tags are kept with no session running at all", {
   p <- app_project()
   idx <- ph_read_index(p$cfg)
   rel <- idx$rel_path[1]
@@ -337,7 +337,7 @@ test_that("a closed browser still writes the visit in progress", {
     session$setInputs(photo_pick = idx$id[1])
     session$setInputs(start = 1)
     session$setInputs(mic_ready = list(ok = FALSE, why = "test"))
-    # No stop_sitting, no navigation: the tab simply closes.
+    # No stop_session, no navigation: the tab simply closes.
   })
   expect_equal(ph_visit_counts(p$cfg, rel), 1L)
 })
@@ -376,7 +376,7 @@ test_that("the path reads in the order photographs were viewed", {
     # photographs were left.
     session$setInputs(visit_done = list(key = "v1", at = 1))
     session$setInputs(visit_done = list(key = "v2", at = 2))
-    session$setInputs(stop_sitting = 1)
+    session$setInputs(stop_session = 1)
     session$setInputs(visit_done = list(key = "v3", at = 3))
   })
 
@@ -430,21 +430,21 @@ test_that("a failed microphone reports a remedy, not just the error name", {
     # Permission granted in the page, refused by macOS underneath.
     session$setInputs(mic_ready = list(ok = FALSE, why = "NotFoundError"))
 
-    msg <- output$sitting_info
+    msg <- output$session_info
     expect_match(msg, "Firefox")
     expect_match(msg, "Microphone")
     expect_false(grepl("^no microphone", msg))
-    # The sitting continues: the path is still recorded.
+    # The session continues: the path is still recorded.
     expect_true(nrow(ph_sessions(p$cfg)) == 1L)
 
     # There is a way to retry once the permission is fixed.
     session$setInputs(mic_retry = 1)
     session$setInputs(mic_ready = list(ok = TRUE, mime = "audio/webm"))
-    expect_match(output$sitting_info, "sitting")
+    expect_match(output$session_info, "session")
   })
 })
 
-test_that("a browser that cannot record is reported before a sitting starts", {
+test_that("a browser that cannot record is reported before a session starts", {
   p <- app_project()
   shiny::testServer(app_dir_for(p), {
     session$setInputs(browser_env = list(
@@ -481,7 +481,7 @@ test_that("the check establishes which browser later advice names", {
       ua = "Mozilla/5.0 (Macintosh; rv:141.0) Gecko/20100101 Firefox/141.0"))
     session$setInputs(start = 1)
     session$setInputs(mic_ready = list(ok = FALSE, why = "NotFoundError"))
-    expect_match(output$sitting_info, "Firefox")
+    expect_match(output$session_info, "Firefox")
   })
 })
 
@@ -528,7 +528,7 @@ test_that("a chunk that arrives after the visit closed is still stored", {
     expect_false(any(grepl("incomplete",
                            as.character(output$integrity_warn$html))))
 
-    session$setInputs(stop_sitting = 1)
+    session$setInputs(stop_session = 1)
     session$setInputs(visit_done = list(key = "v2", at = 2, bytes = 0))
   })
 
@@ -559,7 +559,7 @@ test_that("a chunk resent by the retry is written only once", {
                                          last = FALSE))
     session$setInputs(photo_pick = ord[2])
     session$setInputs(visit_done = list(key = "v1", at = 1, bytes = length(a)))
-    session$setInputs(stop_sitting = 1)
+    session$setInputs(stop_session = 1)
     session$setInputs(visit_done = list(key = "v2", at = 2, bytes = 0))
   })
 
@@ -586,7 +586,7 @@ test_that("a chunk for a discarded visit is thrown away, not appended", {
     # A chunk from the discarded recorder, still on the wire.
     session$setInputs(audio_chunk = list(key = "v1", seq = 2, b64 = enc(a),
                                          last = TRUE))
-    session$setInputs(stop_sitting = 1)
+    session$setInputs(stop_session = 1)
     session$setInputs(visit_done = list(key = "v2", at = 2, bytes = 0))
   })
 
@@ -615,7 +615,7 @@ test_that("audio that never arrives is reported and recorded", {
     html <- as.character(output$integrity_warn$html)
     expect_match(html, "incomplete")
     expect_match(html, "kB recorded")
-    session$setInputs(stop_sitting = 1)
+    session$setInputs(stop_session = 1)
     session$setInputs(visit_done = list(key = "v2", at = 2, bytes = 0))
   })
 
@@ -630,7 +630,7 @@ test_that("pause waits for the visit before stopping the microphone", {
   src <- paste(readLines(app), collapse = "\n")
   # ph_disarm stops the microphone tracks, which would cut off a recorder still
   # flushing its last chunk. It must go through finish_pause(), which waits for
-  # rv$pending to drain, exactly as finish_sitting() does.
+  # rv$pending to drain, exactly as finish_session() does.
   expect_match(src, "finish_pause", fixed = TRUE)
   expect_match(src, "rv$pausing", fixed = TRUE)
 })
@@ -650,21 +650,21 @@ test_that("a chunk that cannot be written is reported, not left to retry", {
     session$setInputs(mic_ready = list(ok = TRUE, mime = "audio/webm"))
     session$setInputs(audio_chunk = list(key = "v1", seq = 1, b64 = enc(a)))
 
-    # The drive goes away mid-sitting, and the append raises rather than
+    # The drive goes away mid-session, and the append raises rather than
     # returning. Left to propagate it would skip the acknowledgement, and the
     # client would retry this chunk for ever: the visit could never finalize
-    # and End sitting would never answer.
+    # and End session would never answer.
     unlink(vdir, recursive = TRUE)
     expect_no_error(
       session$setInputs(audio_chunk = list(key = "v1", seq = 2, b64 = enc(a))))
     expect_match(as.character(output$integrity_warn$html),
                  "could not be written")
 
-    # The visit still closes, and the sitting still ends.
+    # The visit still closes, and the session still ends.
     session$setInputs(photo_pick = ord[2])
     session$setInputs(visit_done = list(key = "v1", at = 1,
                                         bytes = 2 * length(a)))
-    session$setInputs(stop_sitting = 1)
+    session$setInputs(stop_session = 1)
     session$setInputs(visit_done = list(key = "v2", at = 2, bytes = 0))
     expect_null(rv$session_dir)
     expect_length(rv$pending, 0L)
@@ -698,7 +698,7 @@ test_that("one photograph's tags are not written onto the next", {
   expect_false(file.exists(file.path(ph_visit_dir(p$cfg, rel_of(b)), "tags.yml")))
 })
 
-test_that("quitting ends the sitting in progress rather than dropping it", {
+test_that("quitting ends the session in progress rather than dropping it", {
   # The recording on screen must reach disk before the server stops.
   p <- app_project(min_visit_seconds = 0)
   idx <- ph_read_index(p$cfg)
@@ -711,7 +711,7 @@ test_that("quitting ends the sitting in progress rather than dropping it", {
     session$setInputs(quit_confirm = 1)
   })
   expect_equal(ph_visit_counts(p$cfg, rel), 1L)
-  # And the sitting is closed off properly, not left half-written.
+  # And the session is closed off properly, not left half-written.
   sess <- ph_sessions(p$cfg)
   expect_equal(nrow(sess), 1L)
   path <- ph_path_read(sess$dir[1])
@@ -732,7 +732,7 @@ test_that("quitting saves what was typed but not yet left", {
   expect_equal(ph_tags(p$cfg, rel)$place, "Elgol")
 })
 
-test_that("quitting with no sitting running writes nothing", {
+test_that("quitting with no session running writes nothing", {
   p <- app_project()
   shiny::testServer(app_dir_for(p), {
     session$setInputs(quit = 1)
@@ -773,7 +773,7 @@ test_that("the panel follows the playback rather than staying behind", {
   })
 })
 
-test_that("playback opens no visit, even mid-sitting", {
+test_that("playback opens no visit, even mid-session", {
   p <- app_project(min_visit_seconds = 0)
   idx <- ph_read_index(p$cfg)
   ord <- ph_tree_order(idx)
@@ -784,10 +784,10 @@ test_that("playback opens no visit, even mid-sitting", {
     session$setInputs(photo_pick = a)
     session$setInputs(start = 1)
     session$setInputs(mic_ready = list(ok = FALSE, why = "test"))
-    # Starting the sitting opened a visit for the photograph on screen.
+    # Starting the session opened a visit for the photograph on screen.
     expect_equal(rv$visit$rel_path, rel_of(a))
 
-    # Watching a sitting back is not recording one: the playback must not open
+    # Watching a session back is not recording one: the playback must not open
     # a visit for the photographs it passes through.
     session$setInputs(play_at = list(id = b, visit = 1L))
     expect_equal(rv$visit$rel_path, rel_of(a))

@@ -38,7 +38,7 @@ The helper writes \code{visit-NNNN.txt} beside the audio when it finishes.
 \details{
 Never raises. A visit that cannot be transcribed -- no audio, a WebM
 recording, no helper on this machine -- returns the reason instead, so the
-sitting carries on.
+session carries on.
 }
 \examples{
 \dontrun{

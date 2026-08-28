@@ -226,7 +226,7 @@ ph_js <- "
     q:[], sending:false, seq:0, pending:{}, closing:{},
     order:[], current:null, chunkMs:5000,
     play:null, playIdx:0, audio:null, tagsFor:null, tagsWant:null,
-    deviceId:null, sitting:false, checkOwnsStream:false, ac:null, meter:null,
+    deviceId:null, session:false, checkOwnsStream:false, ac:null, meter:null,
     visitKey:'', ackedBy:{}, bytesBy:{}, stopped:{}, dropped:{},
     closeTimer:{},
     z:1, tx:0, ty:0, drag:null
@@ -257,7 +257,7 @@ ph_js <- "
     //
     // Coerced rather than compared strictly: the number makes a round trip
     // through R and JSON, and a '7' or a [7] arriving here would reject every
-    // acknowledgement and stall the queue for the rest of the sitting.
+    // acknowledgement and stall the queue for the rest of the session.
     var s = (seq == null) ? null : Number(seq);
     if (!head || (s !== null && head.seq !== s)) return;
     clearTimeout(PH.retry);
@@ -307,7 +307,7 @@ ph_js <- "
   }
   // Nothing else bounds that wait. A recorder that errors, or whose tracks the
   // system ends, may never fire onstop, and the visit would then stay open for
-  // ever: the server never renames its .part, and End sitting never answers.
+  // ever: the server never renames its .part, and End session never answers.
   // Report it once the wait is longer than any flush could take, and let the
   // byte comparison say what is missing. Chunks still queued are left where
   // they are -- the server appends a late arrival to the finished file.
@@ -478,27 +478,27 @@ ph_js <- "
                mimes: mimeList(), ua: navigator.userAgent};
 
     // getUserMedia() hands back a new MediaStream every time, and taking the
-    // old one down ends the tracks the sitting's recorder is reading -- which
-    // stops it with nothing on screen to say so. So while a sitting is in
+    // old one down ends the tracks the session's recorder is reading -- which
+    // stops it with nothing on screen to say so. So while a session is in
     // progress the check meters the stream already open. Changing input needs
     // a pause: chunks from two recorders cannot be concatenated, so a new
     // stream has to start a new visit.
-    var reuse = !!(PH.sitting && PH.stream && PH.stream.active !== false);
-    var note = el('ph-mic-sitting');
+    var reuse = !!(PH.session && PH.stream && PH.stream.active !== false);
+    var note = el('ph-mic-session');
     if (note) note.style.display = reuse ? 'block' : 'none';
 
     (reuse ? Promise.resolve(PH.stream) : openMic()).then(function(s){
       if (!reuse) {
         if (PH.stream && PH.stream !== s) stopStream(PH.stream);
         PH.stream = s;
-        PH.checkOwnsStream = !PH.sitting;
+        PH.checkOwnsStream = !PH.session;
       }
       setMic('on');
       meterStart(s);
       return listInputs().then(function(devs){
         fillDevices(devs, reuse);
         send('mic_check', Object.assign({ok: true, devices: devs,
-                                         sitting: reuse}, env));
+                                         session: reuse}, env));
       });
     }).catch(function(err){
       setMic('error');
@@ -517,7 +517,7 @@ ph_js <- "
       if (PH.deviceId === d.id) o.selected = true;
       sel.appendChild(o);
     });
-    // Locked while a sitting runs: switching input restarts the stream.
+    // Locked while a session runs: switching input restarts the stream.
     sel.disabled = !!lock || devs.length < 2;
   }
 
@@ -545,7 +545,7 @@ ph_js <- "
     meterStop();
     // Release the microphone, and the browser's recording indicator, but only
     // if the check opened it. A session in progress keeps its stream.
-    if (PH.checkOwnsStream && !PH.sitting) {
+    if (PH.checkOwnsStream && !PH.session) {
       stopStream(PH.stream); PH.stream = null; setMic('off');
     }
     PH.checkOwnsStream = false;
@@ -571,7 +571,7 @@ ph_js <- "
     PH.stopped[key] = false;
     PH.rec.onerror = function(){
       // Gave up mid-visit. Its tail is lost either way; saying so is what
-      // stops the rest of the sitting being recorded into nothing.
+      // stops the rest of the session being recorded into nothing.
       PH.stopped[key] = true;
       maybeDone(key);
       noRecorder();
@@ -991,7 +991,7 @@ ph_js <- "
   }, true);
 
   // Clicking a speaker chip asks who it was. One delegated handler and one
-  // input, rather than a control per phrase: a sitting can hold hundreds.
+  // input, rather than a control per phrase: a session can hold hundreds.
   document.addEventListener('click', function(e){
     var c = e.target.closest ? e.target.closest('.ph-spk') : null;
     if (!c) return;
@@ -1085,11 +1085,11 @@ ph_js <- "
     // The microphone is armed on a click, never on page load, so the
     // browser's permission prompt appears in response to a user action.
     Shiny.addCustomMessageHandler('ph_arm', function(m){
-      PH.sitting = true;
+      PH.session = true;
       arm(false);
     });
     Shiny.addCustomMessageHandler('ph_disarm', function(m){
-      PH.sitting = false;
+      PH.session = false;
       stopRec();
       meterStop();
       stopStream(PH.stream);
@@ -1110,7 +1110,7 @@ ph_js <- "
     wire('ph-mic-close', closeCheck);
     var dev = el('ph-mic-device');
     if (dev) dev.onchange = function(){
-      if (PH.sitting) return;           // locked mid-sitting; see runCheck()
+      if (PH.session) return;           // locked mid-session; see runCheck()
       PH.deviceId = dev.value || null;
       runCheck();                       // reopen on the newly chosen device
     };
@@ -1231,8 +1231,8 @@ ui <- page_sidebar(
       div(class = "ph-hide",
           actionButton("mic_check_btn", "Check microphone",
                        class = "btn-sm btn-outline-light")),
-      div(class = "ph-hide", uiOutput("sitting_controls", inline = TRUE)),
-      div(class = "ph-meta ph-hide", textOutput("sitting_info", inline = TRUE)),
+      div(class = "ph-hide", uiOutput("session_controls", inline = TRUE)),
+      div(class = "ph-meta ph-hide", textOutput("session_info", inline = TRUE)),
       div(class = "ms-auto ph-hide", uiOutput("play_controls", inline = TRUE))
     ),
     # Static, hidden, and driven by the JavaScript above. Not a Shiny modal:
@@ -1247,9 +1247,9 @@ ui <- page_sidebar(
                       "Check")),
       div(class = "ph-level", tags$i(id = "ph-level-fill")),
       div(class = "hint", "Speak: the level bar should move."),
-      div(class = "hint", id = "ph-mic-sitting", style = "display:none",
-          paste("A sitting is in progress, so this check listens to the",
-                "microphone already open. Pause the sitting to change input.")),
+      div(class = "hint", id = "ph-mic-session", style = "display:none",
+          paste("A session is in progress, so this check listens to the",
+                "microphone already open. Pause the session to change input.")),
       div(class = "advice", id = "ph-mic-advice"),
       div(class = "detail", id = "ph-mic-detail"),
       div(class = "row2 mt-2",
@@ -1302,7 +1302,7 @@ server <- function(input, output, session) {
   rv <- reactiveValues(
     idx = idx_all,
     current = NULL,          # photo id on screen
-    session_dir = NULL,      # NULL until a sitting starts
+    session_dir = NULL,      # NULL until a session starts
     armed = FALSE,           # microphone open
     mic_msg = NULL,
     paused = FALSE,          # Pause pressed, as against arming having failed
@@ -1320,7 +1320,7 @@ server <- function(input, output, session) {
     pending = list(),        # visits waiting for their last audio chunks
     seq = 0L,
     reserved = list(),       # rel_path -> highest visit number handed out
-    ending = FALSE,          # End sitting pressed, waiting for visits to drain
+    ending = FALSE,          # End session pressed, waiting for visits to drain
     tick = 0L,
     quitting = FALSE,        # Quit pressed, waiting for visits to drain
     speaker_at = NULL,       # the phrase whose speaker is being named
@@ -1424,7 +1424,7 @@ server <- function(input, output, session) {
   }
 
   # The fields show what is known about the photograph on screen, with or
-  # without a sitting. rv$tags_for and rv$tags_seeded record which photograph
+  # without a session. rv$tags_for and rv$tags_seeded record which photograph
   # they belong to and what was put in them, so save_tags() can tell an edit
   # from the seeding itself and write only when something actually changed.
   seed_fields <- function(rel_path) {
@@ -1484,7 +1484,7 @@ server <- function(input, output, session) {
     open_visit()
   })
 
-  # ---- a sitting ---------------------------------------------------------
+  # ---- a session ---------------------------------------------------------
   observeEvent(input$start, {
     rv$paused <- FALSE
     rv$session_dir <- ph_path_new(cfg)
@@ -1493,7 +1493,7 @@ server <- function(input, output, session) {
     showModal(modalDialog(
       title = "Recording started",
       p("The microphone is on. Conversation about each photograph is being ",
-        "recorded, and will continue until you end the sitting."),
+        "recorded, and will continue until you end the session."),
       p(class = "text-secondary",
         "Files are written to this computer, under the work directory. ",
         "Nothing is uploaded."),
@@ -1575,19 +1575,19 @@ server <- function(input, output, session) {
     open_visit()
   })
 
-  observeEvent(input$stop_sitting, {
+  observeEvent(input$stop_session, {
     rv$ending <- TRUE
     # A natural checkpoint: the photograph stays on screen, so nothing forces
     # its tags to disk until the next navigation without this.
     save_tags()
     close_visit()
-    finish_sitting()
+    finish_session()
   })
 
   # An audio visit finalizes only once the browser has flushed its last chunk,
   # so the session cannot be closed the moment the button is pressed: its final
   # `leave` row would land after `end`. Wait for the queue to drain.
-  finish_sitting <- function() {
+  finish_session <- function() {
     if (!isTRUE(rv$ending) || length(rv$pending)) return(invisible(NULL))
     d <- rv$session_dir
     if (!is.null(d)) ph_path_append(d, "end")
@@ -1600,7 +1600,7 @@ server <- function(input, output, session) {
     if (!is.null(d) && !isTRUE(rv$quitting)) {
       p <- ph_path_read(d)
       showModal(modalDialog(
-        title = "Sitting ended",
+        title = "Session ended",
         sprintf("%d visit(s) recorded to %s", sum(p$event == "leave"),
                 basename(d)),
         easyClose = TRUE, footer = modalButton("Close")))
@@ -1619,7 +1619,7 @@ server <- function(input, output, session) {
 
   # ph_disarm stops the microphone tracks, which would cut off a recorder that
   # is still flushing its last chunk. Wait for the visit to drain first, the
-  # way finish_sitting() does.
+  # way finish_session() does.
   finish_pause <- function() {
     if (!isTRUE(rv$pausing) || length(rv$pending)) return(invisible(NULL))
     tell("ph_disarm", list(on = FALSE))
@@ -1714,7 +1714,7 @@ server <- function(input, output, session) {
     }
 
     # What the browser said it recorded, against what reached the file. A
-    # sitting cannot be repeated, so a shortfall is worth saying out loud.
+    # session cannot be repeated, so a shortfall is worth saying out loud.
     expected <- suppressWarnings(as.numeric(bytes %||% NA)[1])
     stored <- if (!is.null(final) && file.exists(final)) file.size(final) else 0
     if (!is.na(expected) && expected > 0) rv$expected[[key]] <- expected
@@ -1747,12 +1747,12 @@ server <- function(input, output, session) {
     }
     # The recording is complete and renamed, so the photograph just left can be
     # transcribed while the next one is on screen. Started in the background:
-    # waiting here would freeze the app mid-sitting.
+    # waiting here would freeze the app mid-session.
     if (!is.na(audio)) ph_transcribe_visit(cfg, v$rel_path, v$visit, audio = audio)
 
     rv$tick <- rv$tick + 1L
     finish_pause()
-    finish_sitting()
+    finish_session()
     finish_quit()
     invisible(NULL)
   }
@@ -1803,9 +1803,9 @@ server <- function(input, output, session) {
               else rv$closed[[key]]
     if (!is.null(target)) {
       # The write can fail outright -- a removable drive unmounted, a
-      # permission changed mid-sitting. Raising here would skip the
+      # permission changed mid-session. Raising here would skip the
       # acknowledgement below, and the client would then retry this chunk for
-      # ever: the visit would never finalize and End sitting would never
+      # ever: the visit would never finalize and End session would never
       # answer. Report it on screen and carry on.
       # Warnings are muffled with it: a connection that cannot be opened warns
       # and then raises, carrying the same text twice, and the message below is
@@ -1842,9 +1842,9 @@ server <- function(input, output, session) {
         span(class = "dot"), span(if (on) "REC" else "not recording"))
   })
 
-  output$sitting_controls <- renderUI({
+  output$session_controls <- renderUI({
     if (is.null(rv$session_dir)) {
-      return(actionButton("start", "Start sitting", class = "btn-sm btn-danger"))
+      return(actionButton("start", "Start session", class = "btn-sm btn-danger"))
     }
     tagList(
       # Three states, not two: a paused session resumes, while a session whose
@@ -1860,18 +1860,18 @@ server <- function(input, output, session) {
       },
       actionButton("discard", "Discard this take",
                    class = "btn-sm btn-outline-warning"),
-      actionButton("stop_sitting", "End sitting",
+      actionButton("stop_session", "End session",
                    class = "btn-sm btn-outline-danger")
     )
   })
 
-  output$sitting_info <- renderText({
+  output$session_info <- renderText({
     if (!is.null(rv$mic_msg)) return(rv$mic_msg)
     if (is.null(rv$session_dir)) {
-      return("no sitting in progress — nothing is being recorded")
+      return("no session in progress — nothing is being recorded")
     }
     v <- rv$visit
-    sprintf("sitting %s%s", basename(rv$session_dir),
+    sprintf("session %s%s", basename(rv$session_dir),
             if (!is.null(v)) sprintf(" · visit %d", v$visit) else "")
   })
 
@@ -1896,7 +1896,7 @@ server <- function(input, output, session) {
   })
 
   # ---- who spoke -----------------------------------------------------------
-  # Names offered are the ones already used in this photograph's sitting, plus
+  # Names offered are the ones already used in this photograph's session, plus
   # everyone tagged anywhere in the project: the people in a photograph and the
   # people discussing it overlap heavily in a family without being the same set.
   speaker_names <- function(rel_path, visit) {
@@ -1942,7 +1942,7 @@ server <- function(input, output, session) {
     invisible(NULL)
   }
 
-  # Naming one phrase re-works the whole sitting, so the names appear on the
+  # Naming one phrase re-works the whole session, so the names appear on the
   # other photographs while you are still labelling. Recordings are decoded
   # once per session and kept, so this costs about a second the first time and
   # very little afterwards.
@@ -1965,7 +1965,7 @@ server <- function(input, output, session) {
       }
       return(invisible(NULL))
     }
-    # A visit outside any sitting: nothing useful to say about it.
+    # A visit outside any session: nothing useful to say about it.
     sess <- ph_visit_session(cfg, rel_path, visit)
     if (is.null(sess)) return(invisible(NULL))
     res <- tryCatch({
@@ -2006,7 +2006,7 @@ server <- function(input, output, session) {
     showModal(modalDialog(
       title = "Quit phostor?",
       if (running) {
-        paste("A sitting is in progress. Quitting ends it first, so the",
+        paste("A session is in progress. Quitting ends it first, so the",
               "recording on screen is saved before phostor stops.")
       } else {
         "This stops phostor. Anything already recorded is on disk."
@@ -2021,17 +2021,17 @@ server <- function(input, output, session) {
     save_tags()
     rv$quitting <- TRUE
     if (!is.null(rv$session_dir)) {
-      # The same path as End sitting. An audio visit reaches finalize_visit()
+      # The same path as End session. An audio visit reaches finalize_visit()
       # only after the browser flushes its last chunk, so the server cannot
       # stop here: finish_quit() waits for the queue to drain.
       rv$ending <- TRUE
       close_visit()
-      finish_sitting()
+      finish_session()
     }
     finish_quit()
   })
 
-  # Called wherever finish_sitting() is, and waits on the same condition: every
+  # Called wherever finish_session() is, and waits on the same condition: every
   # recording has reached disk.
   finish_quit <- function() {
     if (!isTRUE(rv$quitting) || length(rv$pending)) return(invisible(NULL))
@@ -2140,7 +2140,7 @@ server <- function(input, output, session) {
     close_visit()
     pl <- ph_playlist(cfg, d)
     if (!nrow(pl)) {
-      showNotification("That sitting has no completed visits.",
+      showNotification("That session has no completed visits.",
                        type = "warning")
       return()
     }
@@ -2164,7 +2164,7 @@ server <- function(input, output, session) {
   # when Play was pressed -- and typing into a field would then write against
   # that photograph rather than the one being shown.
   #
-  # No visit is opened or closed here: watching a sitting back is not recording
+  # No visit is opened or closed here: watching a session back is not recording
   # one, and input$play has already closed whatever was open.
   observeEvent(input$play_at, {
     id <- as.integer(input$play_at$id)
