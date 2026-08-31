@@ -146,6 +146,10 @@ test('b folds away what is under the photograph', async ({ page }) => {
   await page.click('.ph-img-wrap');
 
   await expect(page.locator('.ph-tags')).toBeVisible();
+  // The visits panel arrives in a later flush than the fields do, and it is
+  // part of what b folds away. Measuring before it lands weighs one layout
+  // against another and the heights never match.
+  await page.waitForSelector('.ph-hist');
   const before = (await page.locator('.ph-img-wrap').boundingBox()).height;
 
   await page.keyboard.press('b');
@@ -219,6 +223,9 @@ test('presentation leaves one line of text above the photograph', async ({ page 
   await page.goto('/');
   await page.waitForSelector('.ph-tree');
   await page.click('.ph-img-wrap');
+  // As above: the frame gives up height when the visits panel lands, so the
+  // two measurements have to be of the same layout.
+  await page.waitForSelector('.ph-hist');
 
   const before = (await page.locator('.ph-img-wrap').boundingBox()).height;
 

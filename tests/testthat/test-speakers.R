@@ -403,3 +403,119 @@ test_that("the startup notice is only for someone already naming speakers", {
   ph_speaker_label(p$cfg, "top.jpg", 1L, start = 0, speaker = "Beth")
   expect_message(phostor:::ph_app_notes(p$cfg), "tuneR")
 })
+
+# --------------------------------------------------------------------------
+# runs, colours, and what the voices are learned from
+# --------------------------------------------------------------------------
+
+test_that("a chip marks where the voice changed, and nowhere else", {
+  timed <- data.frame(start = c(0, 2, 4, 6, 8, 10), end = c(2, 4, 6, 8, 10, 12),
+                      text = letters[1:6], stringsAsFactors = FALSE)
+  labels <- data.frame(start = c(0, 2, 4, 8, 10), end = c(2, 4, 6, 10, 12),
+                       speaker = c("Beth", "Beth", "Beth", "Marty", "Marty"),
+                       source = c("manual", "auto", "manual", "manual",
+                                  "manual"),
+                       confidence = c(1, .5, 1, 1, 1), stringsAsFactors = FALSE)
+  run <- ph_speaker_runs(timed, labels)
+
+  # Three chips for six phrases: Beth, the unnamed one, Marty.
+  expect_equal(run$lead, c(TRUE, FALSE, FALSE, TRUE, TRUE, FALSE))
+  expect_equal(run$run, c(1, 1, 1, 2, 3, 3))
+
+  # Beth's own name followed by Beth guessed is still Beth talking, so the
+  # provenance changing does not open a run -- but it does stop the chip
+  # claiming that everything under it is ground truth.
+  expect_false(run$all_manual[1])
+  expect_true(run$all_manual[5])
+})
+
+test_that("unnamed phrases never collapse into one another", {
+  timed <- data.frame(start = c(0, 2, 4), end = c(2, 4, 6),
+                      text = letters[1:3], stringsAsFactors = FALSE)
+  run <- ph_speaker_runs(timed, ph_speakers_read_empty())
+  # Every "+" has to stay clickable, or a phrase becomes unnameable.
+  expect_true(all(run$lead))
+  expect_equal(run$speaker, rep("", 3))
+})
+
+test_that("a run of one, and no phrases at all", {
+  timed <- data.frame(start = 0, end = 2, text = "a", stringsAsFactors = FALSE)
+  labels <- data.frame(start = 0, end = 2, speaker = "Beth", source = "manual",
+                       confidence = 1, stringsAsFactors = FALSE)
+  run <- ph_speaker_runs(timed, labels)
+  expect_true(run$lead)
+  expect_true(run$all_manual)
+  expect_equal(nrow(ph_speaker_runs(timed[0, ], labels)), 0L)
+})
+
+test_that("colours are handed out in the order voices are first heard", {
+  p <- make_project()
+  sess <- ph_path_new(p$cfg, title = "colours")
+  idx <- ph_read_index(p$cfg)
+  rel <- idx$rel_path[1:2]
+  for (k in 1:2) {
+    dir <- ph_visit_dir(p$cfg, rel[k], create = TRUE)
+    writeLines(c("start\tend\ttext", "0.000\t2.000\tone", "2.000\t4.000\ttwo"),
+               file.path(dir, "visit-0001.tsv"))
+    ph_write_sidecar(p$cfg, rel[k], 1L, list(session = basename(sess)))
+    ph_path_append(sess, "show", rel_path = rel[k], visit = 1L)
+    ph_path_append(sess, "leave", rel_path = rel[k], visit = 1L, duration = 4)
+  }
+  ph_path_append(sess, "end")
+
+  # Marty speaks second on the first photograph, Beth first.
+  ph_speaker_label(p$cfg, rel[1], 1L, start = 0, speaker = "Beth")
+  ph_speaker_label(p$cfg, rel[1], 1L, start = 2, speaker = "Marty")
+  ph_speaker_label(p$cfg, rel[2], 1L, start = 0, speaker = "Vera")
+  expect_equal(ph_speaker_slots(p$cfg, sess),
+               c(Beth = 1L, Marty = 2L, Vera = 3L))
+
+  # A voice past the last slot keeps its name and loses its hue, rather than
+  # borrowing the first voice's colour and putting two people in one.
+  ph_speaker_label(p$cfg, rel[2], 1L, start = 2, speaker = "Stefan")
+  dir <- ph_visit_dir(p$cfg, rel[2])
+  writeLines(c("start\tend\ttext", "0.000\t2.000\tone", "2.000\t4.000\ttwo",
+               "4.000\t6.000\tthree"), file.path(dir, "visit-0001.tsv"))
+  ph_speaker_label(p$cfg, rel[2], 1L, start = 4, speaker = "Anna")
+  got <- ph_speaker_slots(p$cfg, sess)
+  expect_equal(unname(got[["Anna"]]), 0L)
+  expect_equal(sum(got > 0L), ph_speaker_slot_n)
+
+  expect_equal(ph_speaker_slots(p$cfg, NULL), integer(0))
+})
+
+test_that("the voices are learned from a person's labels and never the model's", {
+  # ph_speakers_apply() writes its own guesses into the same file it learns
+  # from. Nothing but the `source` column stops the next pass training on them,
+  # and a model taught by its own output drifts without ever saying so.
+  p <- make_project()
+  sess <- ph_path_new(p$cfg, title = "provenance")
+  idx <- ph_read_index(p$cfg)
+  rel <- idx$rel_path[1]
+  dir <- ph_visit_dir(p$cfg, rel, create = TRUE)
+  writeLines(c("start\tend\ttext", "0.000\t2.000\tone", "2.000\t4.000\ttwo",
+               "4.000\t6.000\tthree"), file.path(dir, "visit-0001.tsv"))
+  ph_write_sidecar(p$cfg, rel, 1L, list(session = basename(sess)))
+  ph_path_append(sess, "show", rel_path = rel, visit = 1L)
+  ph_path_append(sess, "leave", rel_path = rel, visit = 1L, duration = 6)
+  ph_path_append(sess, "end")
+
+  ph_speaker_label(p$cfg, rel, 1L, start = 0, speaker = "Beth")
+  ph_speaker_label(p$cfg, rel, 1L, start = 2, speaker = "Marty")
+  # A guess for a third voice nobody ever named.
+  lab <- ph_speakers_read(p$cfg, rel, 1L)
+  ph_speakers_write(p$cfg, rel, 1L, rbind(lab, data.frame(
+    start = 4, end = 6, speaker = "Ghost", source = "auto", confidence = 0.01,
+    stringsAsFactors = FALSE)))
+
+  ph <- ph_speaker_phrases(p$cfg, sess)
+  hand <- which(!is.na(ph$speaker) & ph$source == "manual")
+  expect_equal(sort(ph$speaker[hand]), c("Beth", "Marty"))
+  expect_false("Ghost" %in% ph$speaker[hand])
+
+  # And through the profiles themselves: a voice with no hand-labelled example
+  # has nothing to average, so it must not appear among them.
+  feats <- list(c(1, 0), c(0, 1), c(1, 1))
+  prof <- ph_speaker_fit_from(feats[hand], ph$speaker[hand])
+  expect_equal(sort(colnames(prof)), c("Beth", "Marty"))
+})

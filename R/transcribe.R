@@ -236,6 +236,14 @@ ph_transcript <- function(config, rel_path, visit) {
   path <- file.path(ph_visit_dir(cfg, rel_path),
                     paste0(ph_visit_stem(visit), ".txt"))
   if (!file.exists(path)) return(NA_character_)
+  # Corrections live in their own file (see R/edits.R) so that neither the
+  # transcript nor the sidecar is ever rewritten. The prose has to reflect them
+  # even so, or the panel and ph_transcript() would disagree about what was
+  # said, so it is rebuilt from the corrected phrases when there are any.
+  if (nrow(ph_edits_read(cfg, rel_path, visit))) {
+    timed <- ph_transcript_timed(cfg, rel_path, visit)
+    if (nrow(timed)) return(paste(timed$text, collapse = " "))
+  }
   paste(readLines(path, warn = FALSE), collapse = "\n")
 }
 
@@ -257,6 +265,13 @@ ph_transcript <- function(config, rel_path, visit) {
 #' @export
 ph_transcript_timed <- function(config, rel_path, visit) {
   cfg <- ph_as_config(config)
+  raw <- ph_transcript_raw(cfg, rel_path, visit)
+  ph_edits_apply(raw, ph_edits_read(cfg, rel_path, visit))
+}
+
+# The transcriber's own phrases, before any correction is applied. Only
+# R/edits.R needs these: everything else wants what was actually said.
+ph_transcript_raw <- function(cfg, rel_path, visit) {
   empty <- data.frame(start = numeric(0), end = numeric(0),
                       text = character(0), stringsAsFactors = FALSE)
   path <- file.path(ph_visit_dir(cfg, rel_path),

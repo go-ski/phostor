@@ -12,6 +12,9 @@ const zoomed = async (page) => (await H.zoomOf(page)).state;
 // Puts the pointer over the middle of the photograph and leaves it there, so
 // a wheel event lands on the frame.
 async function overPhoto(page) {
+  // The frame gives up height when the visits panel lands, so a pointer placed
+  // before that is no longer over the middle of anything.
+  await page.waitForSelector('.ph-hist', { state: 'attached' });
   const b = await page.locator('.ph-img-wrap').boundingBox();
   await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
   return b;
@@ -23,6 +26,7 @@ async function overPhoto(page) {
 // time the whole suite reaches here the visits panel has squeezed the frame
 // down to a couple of hundred pixels, where a fixed step leaves the window.
 async function dragAcross(page, sx, sy) {
+  await page.waitForSelector('.ph-hist', { state: 'attached' });
   const b = await page.locator('.ph-img-wrap').boundingBox();
   const m = 8;
   const near = { x: b.x + m, y: b.y + m };

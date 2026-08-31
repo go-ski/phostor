@@ -165,6 +165,8 @@ it: the app goes on listening.
       visit-0001.mp4
       visit-0001.txt            the transcript, when there is one
       visit-0001.tsv            the same words, with the seconds each spans
+      visit-0001-edits.tsv      corrections to those words, if you made any
+      visit-0001-speakers.tsv   who said which phrase, once anyone has said
       visit-0002.yml
       visit-0002.mp4
 ```
@@ -348,6 +350,7 @@ sidecars/Trips/Skye/img_0421.jpg/
   visit-0001.mp4     what was said
   visit-0001.txt     what it said
   visit-0001.tsv     and when each phrase was said
+  visit-0001-edits.tsv   anything you corrected
   visit-0001.yml     everything else
 ```
 
@@ -361,6 +364,19 @@ start	end	text
 ```
 
 That is what lets the app light the words up as the recording plays.
+
+### Correcting what it heard
+
+Double-click a phrase to fix it. The words are editable, and the same dialog
+divides one phrase into two where the transcriber ran two people's speech
+together — see [Who said it](#who-said-it), which is what that is for.
+
+Corrections go in `visit-NNNN-edits.tsv` beside the transcript rather than into
+it. `visit-NNNN.tsv` belongs to the transcriber and is never rewritten, so a
+correction survives `phostor transcribe --force`, and phostor keeps its habit of
+only ever adding files. Transcribing a recording again moves the phrase
+boundaries, and a correction that no longer matches one is dropped rather than
+applied to the wrong words.
 
 Transcription runs entirely on this Mac. Nothing is uploaded, there is no
 account and no per-minute cost. It uses `SpeechAnalyzer`, which arrived in
@@ -426,10 +442,22 @@ install.packages("tuneR")
 Without it names are still saved, but they will not spread — the app says so
 when you name a phrase, and `ph_preflight()` lists it.
 
-Under each phrase of a transcript is a small chip. Click it and say who spoke.
-Naming one phrase re-works the whole session, so the names spread to the other
-photographs while you are still labelling, and a note tells you how well it is
-doing. Nothing to run, and no need to leave the app.
+Between the sentences of a transcript are small chips. Click one and say who
+spoke. Naming one phrase re-works the whole session, so the names spread to the
+other photographs while you are still labelling, and a note tells you how well
+it is doing. Nothing to run, and no need to leave the app.
+
+**A chip marks where the voice changed, not who said each sentence.** One person
+talking for six sentences gets one chip, not their name printed six times; the
+next chip is the next person. Each voice keeps one colour through the session,
+so who is talking can be read down a page without reading the names. Four voices
+get a colour; a fifth keeps its name and goes uncoloured, rather than borrowing
+someone else's.
+
+A filled chip is yours throughout. A dashed one covers at least one guess, so
+what is filled is exactly what the voices are learned from — the chip never
+claims more than it has. If the model has wrongly split one person in two,
+**Same as above** in the dialog says so, and the extra chip goes.
 
 Give each voice **at least two phrases** before the figure means anything:
 leaving out the only example a voice has leaves nothing to recognise it by.
@@ -453,9 +481,9 @@ running these elsewhere: both rewrite the same file, and one can undo the other.
 
 `ph_speakers_check()` leaves out each phrase you named in turn, works it out
 from the others, and tells you how often it would have been right — on your own
-voices, in your own room. Run it before trusting anything automatic. Automatic
-names are shown dimmed; correcting one makes it yours, and teaches the next
-pass.
+voices, in your own room. Run it before trusting anything automatic. A chip
+holding an automatic name is drawn hollow and dashed rather than filled;
+correcting one makes it yours, and teaches the next pass.
 
 **A set of voices reaches only within its session.** This is the one rule that
 matters. The same voices, learned from a clean reading and identified across a
@@ -474,9 +502,21 @@ them well, but any threshold chosen beforehand would have named everything or
 nothing. So phostor asks how decisive it had to be to be right on the phrases
 *you* named, and holds the rest to that.
 
-**What it cannot do.** Two people talking at once cannot be separated by any of
-this, and a family round a table does it constantly. Where the transcriber has
-run two voices into one phrase, the name will be whichever it sounds more like.
+**Two voices in one sentence.** The transcriber hears one sentence where two
+people spoke, and a chip can only sit between sentences — so there is nowhere to
+say the voice changed part way through. Double-click the sentence to divide it.
+The dialog seeds a split where you clicked, and **Hear it** plays the recording
+from there so the moment can be found by ear rather than guessed; then it asks
+who the second half was.
+
+Worth doing rather than tidy: an undivided sentence is the span of audio a voice
+is learned from, and a span holding two people is a profile of neither. Dividing
+one turns a phrase that was teaching the model nonsense into two clean examples.
+
+**What it cannot do.** Two people talking *at the same moment* cannot be
+separated by any of this, and a family round a table does it constantly. Where
+that has happened within one phrase, dividing it does not help: the name will be
+whichever voice it sounds more like.
 
 ## Read-only guarantee
 

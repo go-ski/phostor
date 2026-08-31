@@ -50,6 +50,21 @@ addResourcePath("sidecars", normalizePath(cfg$sidecar_dir))
 ph_css <- "
 :root { --ph-bg:#111316; --ph-panel:#1b1e23; --ph-line:#2b3038;
         --ph-ink:#e8eaed; --ph-dim:#9aa3ad; --ph-rec:#e5484d; --ph-on:#3b82f6; }
+/* One hue per voice, so turn-taking can be read down a transcript without
+   reading the names. Four of them, and these four: every pair has to stay
+   apart against --ph-panel, not just the pairs that happen to sit next to each
+   other, because everyone talking in a session is on screen at once. No
+   five-hue set of the palette these come from clears that, and blue is left
+   out because it is within noise of --ph-on, the playback highlight.
+
+   Green against yellow is the one weak pair under protanopia. It is allowed
+   here only because a chip always prints the name as well: the colour is a
+   scanning aid and never how anyone is identified. The ink beside each hue is
+   whichever of black or white clears 4.5:1 against it. */
+:root { --ph-s1:#c98500; --ph-s1-ink:#0d0f12;    /* yellow  */
+        --ph-s2:#d55181; --ph-s2-ink:#0d0f12;    /* magenta */
+        --ph-s3:#008300; --ph-s3-ink:#ffffff;    /* green   */
+        --ph-s4:#9085e9; --ph-s4-ink:#0d0f12; }  /* violet  */
 body { background:var(--ph-bg); color:var(--ph-ink); }
 .bslib-sidebar-layout > .sidebar { background:var(--ph-panel); }
 .ph-tree { font-size:.86rem; user-select:none; }
@@ -129,16 +144,43 @@ body { background:var(--ph-bg); color:var(--ph-ink); }
 /* The transcript. Phrases are inline so they wrap as ordinary prose; the
    highlight moves between them as the recording plays. */
 .ph-tx { margin:.3rem 0 .1rem; line-height:1.55; }
-.ph-spk { cursor:pointer; font-size:.72rem; border-radius:9px; padding:0 .4rem;
-  margin-right:.25rem; background:#3a4150; color:#cfd6e0; white-space:nowrap; }
-.ph-spk:hover { background:var(--ph-on); color:#fff; }
-.ph-spk.guess { background:transparent; color:var(--ph-dim);
+/* A chip marks where the voice changed, not who said each sentence, so there
+   is one per run rather than one per phrase. Filled is a run named throughout
+   by a person; dashed holds at least one guess. A voice past the fourth keeps
+   the neutral pill, as an unnamed + always does. Solid against dashed says
+   the same thing as filled against hollow, so provenance survives where the
+   hue does not. */
+.ph-spk { cursor:pointer; font-size:.72rem; border-radius:9px;
+  padding:0 .4rem; margin-right:.25rem; white-space:nowrap;
+  border:1px solid transparent; background:#3a4150; color:#cfd6e0; }
+.ph-spk:hover { background:var(--ph-on); color:#fff; border-color:var(--ph-on); }
+.ph-spk.guess { background:transparent; color:var(--ph-ink);
   border:1px dashed var(--ph-line); }
+.ph-spk.s1 { background:var(--ph-s1); color:var(--ph-s1-ink);
+  border-color:var(--ph-s1); }
+.ph-spk.s2 { background:var(--ph-s2); color:var(--ph-s2-ink);
+  border-color:var(--ph-s2); }
+.ph-spk.s3 { background:var(--ph-s3); color:var(--ph-s3-ink);
+  border-color:var(--ph-s3); }
+.ph-spk.s4 { background:var(--ph-s4); color:var(--ph-s4-ink);
+  border-color:var(--ph-s4); }
+.ph-spk.guess.s1 { background:transparent; color:var(--ph-ink);
+  border:1px dashed var(--ph-s1); }
+.ph-spk.guess.s2 { background:transparent; color:var(--ph-ink);
+  border:1px dashed var(--ph-s2); }
+.ph-spk.guess.s3 { background:transparent; color:var(--ph-ink);
+  border:1px dashed var(--ph-s3); }
+.ph-spk.guess.s4 { background:transparent; color:var(--ph-ink);
+  border:1px dashed var(--ph-s4); }
 .ph-ph { cursor:pointer; border-radius:3px; padding:0 .1rem;
   transition:background .12s; }
 .ph-ph:hover { background:#242932; }
 .ph-ph.on { background:var(--ph-on); color:#fff; }
 .ph-tx.plain { color:var(--ph-ink); }
+/* The seconds field and its audition button, on one line. */
+.ph-split { display:flex; align-items:flex-end; gap:.6rem; }
+.ph-split .form-group { margin-bottom:0; }
+.ph-split .form-control { max-width:9rem; }
 .ph-none { color:var(--ph-dim); font-style:italic; }
 
 /* Presentation mode: photograph and recording indicator only. */
@@ -1014,6 +1056,29 @@ ph_js <- "
     a.play().catch(function(){});
   });
 
+  // Double-clicking a phrase asks to correct it. The browser's own word
+  // selection gives the character offset for free, and that offset is what
+  // seeds where a split falls -- in the words, and proportionally in the
+  // seconds. Delegated, like the two handlers above: a session holds hundreds
+  // of phrases and none of them gets a control of its own.
+  document.addEventListener('dblclick', function(e){
+    var s = e.target.closest ? e.target.closest('.ph-ph') : null;
+    if (!s || !s.dataset.t0) return;
+    var tx = s.closest('.ph-tx');
+    if (!tx || !tx.id) return;
+    e.preventDefault();
+    var off = 0, sel = window.getSelection();
+    if (sel && sel.anchorNode && s.contains(sel.anchorNode)) {
+      off = Math.min(sel.anchorOffset, sel.focusOffset);
+    }
+    // The single click inside this double click has already seeked and
+    // started playing. Left alone the recording runs on under the dialog.
+    var a = document.getElementById('ph-a-' + tx.id.slice(6));
+    if (a) a.pause();
+    send('phrase_edit', {rel: tx.dataset.rel, visit: Number(tx.dataset.visit),
+                         start: Number(s.dataset.t0), offset: off});
+  });
+
   // ---- keyboard ----------------------------------------------------------
   var PH_STEP = {ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1};
   document.addEventListener('keydown', function(e){
@@ -1147,6 +1212,18 @@ ph_js <- "
       PH.play = m.items || [];
       if (!PH.play.length) { playStop(true); return; }
       playAt(0);
+    });
+    // Hearing where a split falls, which is the only way to place it: the
+    // words say roughly where the other voice starts and the ear says exactly.
+    // From half a second before, so the handover is arrived at rather than
+    // begun on.
+    Shiny.addCustomMessageHandler('ph_hear', function(m){
+      var a = document.getElementById('ph-a-' + m.visit);
+      if (!a) return;
+      a.currentTime = Math.max(0, m.at - 0.5);
+      a.play().catch(function(){});
+      clearTimeout(PH.hearTimer);
+      PH.hearTimer = setTimeout(function(){ a.pause(); }, 2500);
     });
     Shiny.addCustomMessageHandler('ph_play_stop', function(m){ playStop(false); });
     Shiny.addCustomMessageHandler('ph_play_step', function(m){
@@ -1324,6 +1401,8 @@ server <- function(input, output, session) {
     tick = 0L,
     quitting = FALSE,        # Quit pressed, waiting for visits to drain
     speaker_at = NULL,       # the phrase whose speaker is being named
+    speaker_prev = NULL,     # the name above it, for "Same as above"
+    phrase_at = NULL,        # the phrase being corrected
     told_tuneR = FALSE,      # the missing-package notice, said once
     tags_for = NULL,         # photograph the tag fields currently hold
     tags_seeded = NULL,      # what was put in them, to tell an edit from that
@@ -1904,15 +1983,36 @@ server <- function(input, output, session) {
     sort(unique(c(used, ph_known_people(cfg))))
   }
 
-  observeEvent(input$speaker_pick, {
-    pick <- input$speaker_pick
+  # Also reached straight after a phrase is split: dividing a sentence is only
+  # ever done because the voice changed, so who the new half was is the next
+  # thing wanted.
+  ask_speaker <- function(pick) {
     rv$speaker_at <- pick
     now <- ph_speakers_read(cfg, pick$rel, as.integer(pick$visit))
     i <- which(abs(now$start - as.numeric(pick$start)) < 0.01)
+    # The name on the phrase above, which is what "Same as above" writes. A
+    # chip now marks where the voice changed, so saying no change happened here
+    # is how one is taken away -- and because it is written as a person's own
+    # answer, tidying the transcript also teaches.
+    timed <- ph_transcript_timed(cfg, pick$rel, as.integer(pick$visit))
+    k <- which(abs(timed$start - as.numeric(pick$start)) < 0.01)
+    prev <- ""
+    if (length(k) && k[1] > 1L) {
+      j <- which(abs(now$start - timed$start[k[1] - 1L]) < 0.01)
+      if (length(j)) prev <- trimws(now$speaker[j[1]])
+    }
+    rv$speaker_prev <- prev
     showModal(modalDialog(
       title = "Who said this?",
+      # The empty choice is load-bearing. A <select> whose selected value is not
+      # among its options falls back to the first one, so opening this on an
+      # unnamed phrase used to arrive with whoever sorts first already chosen,
+      # and Save then attributed the phrase to them without anyone typing a
+      # name. Wrong here is worse than elsewhere: a hand label is ground truth,
+      # and the voices are learned from it.
       selectizeInput("speaker_name", NULL,
-                     choices = speaker_names(pick$rel, as.integer(pick$visit)),
+                     choices = c("", speaker_names(pick$rel,
+                                                   as.integer(pick$visit))),
                      selected = if (length(i)) now$speaker[i[1]] else "",
                      options = list(create = TRUE, persist = FALSE,
                                     placeholder = "a name, or type a new one")),
@@ -1925,10 +2025,15 @@ server <- function(input, output, session) {
           }),
       footer = tagList(
         modalButton("Cancel"),
+        if (nzchar(prev))
+          actionButton("speaker_same", sprintf("Same as above (%s)", prev),
+                       class = "btn-sm btn-outline-secondary"),
         actionButton("speaker_clear", "No name",
                      class = "btn-sm btn-outline-secondary"),
         actionButton("speaker_save", "Save", class = "btn-sm btn-primary"))))
-  })
+  }
+
+  observeEvent(input$speaker_pick, ask_speaker(input$speaker_pick))
 
   save_speaker <- function(name) {
     at <- rv$speaker_at
@@ -1999,6 +2104,99 @@ server <- function(input, output, session) {
   }
   observeEvent(input$speaker_save, save_speaker(input$speaker_name %||% ""))
   observeEvent(input$speaker_clear, save_speaker(""))
+  observeEvent(input$speaker_same, save_speaker(rv$speaker_prev %||% ""))
+
+  # ---- correcting a phrase -------------------------------------------------
+  # The transcriber hears one sentence where two people spoke, and a chip can
+  # only sit between phrases. So saying the voice changed part way through a
+  # sentence means dividing the phrase, and that is what this does. It matters
+  # for more than reading: an undivided phrase is the span of audio a voice is
+  # learned from, and a span holding two voices is a profile of neither.
+  observeEvent(input$phrase_edit, {
+    at <- input$phrase_edit
+    timed <- ph_transcript_timed(cfg, at$rel, as.integer(at$visit))
+    i <- which(abs(timed$start - as.numeric(at$start)) < 0.01)
+    if (!length(i)) return()
+    rv$phrase_at <- at
+    s0 <- timed$start[i[1]]; e0 <- timed$end[i[1]]
+    cut <- ph_phrase_cut(timed$text[i[1]], as.integer(at$offset %||% 0))
+    # Where the words were divided, as a fraction of them, put back on the
+    # clock. Only a starting point -- speech is not evenly spaced -- which is
+    # what the field and the audition button are for.
+    whole <- max(1L, nchar(trimws(paste(cut$before, cut$after))))
+    seed <- s0 + (e0 - s0) * nchar(cut$before) / whole
+    showModal(modalDialog(
+      title = "Correct this phrase",
+      textInput("phrase_before", "first part", value = cut$before,
+                width = "100%"),
+      textInput("phrase_after", "second part", value = cut$after,
+                width = "100%"),
+      div(class = "ph-split",
+          numericInput("phrase_split_at", "split at (seconds)",
+                       value = round(seed, 2), step = 0.05),
+          actionButton("phrase_hear", "Hear it",
+                       class = "btn-sm btn-outline-secondary")),
+      div(class = "small text-secondary",
+          sprintf(paste("This phrase runs %.2f to %.2f seconds. Split it where",
+                        "the other voice starts; each half is then one person,",
+                        "which is what the names are worked out from. Save",
+                        "puts both parts back together as one phrase."),
+                  s0, e0)),
+      footer = tagList(
+        modalButton("Cancel"),
+        actionButton("phrase_save", "Save", class = "btn-sm"),
+        actionButton("phrase_split", "Split", class = "btn-sm btn-primary"))))
+  })
+
+  observeEvent(input$phrase_hear, {
+    at <- rv$phrase_at
+    if (is.null(at)) return()
+    tell("ph_hear", list(visit = as.integer(at$visit),
+                         at = as.numeric(input$phrase_split_at %||% at$start)))
+  })
+
+  # Both write through R/edits.R, which keeps corrections in their own file:
+  # visit-NNNN.tsv belongs to the transcriber and is never rewritten, so a
+  # correction survives transcribing the recording again.
+  edit_phrase <- function(f) {
+    at <- rv$phrase_at
+    if (is.null(at)) return(invisible(NULL))
+    ok <- tryCatch({ f(at); TRUE },
+                   error = function(e) {
+                     showNotification(conditionMessage(e), type = "error",
+                                      duration = 8)
+                     FALSE
+                   })
+    if (!ok) return(invisible(NULL))
+    removeModal()
+    rv$phrase_at <- NULL
+    rv$tick <- rv$tick + 1L
+    invisible(TRUE)
+  }
+
+  observeEvent(input$phrase_save, {
+    words <- trimws(paste(input$phrase_before %||% "",
+                          input$phrase_after %||% ""))
+    edit_phrase(function(at) {
+      ph_phrase_text(cfg, at$rel, as.integer(at$visit),
+                     start = as.numeric(at$start), text = words)
+    })
+  })
+
+  observeEvent(input$phrase_split, {
+    at <- rv$phrase_at
+    if (is.null(at)) return()
+    cut <- as.numeric(input$phrase_split_at %||% NA)
+    done <- edit_phrase(function(a) {
+      ph_phrase_split(cfg, a$rel, as.integer(a$visit),
+                      start = as.numeric(a$start), at = cut,
+                      before = input$phrase_before %||% "",
+                      after = input$phrase_after %||% "")
+    })
+    if (isTRUE(done)) {
+      ask_speaker(list(rel = at$rel, visit = at$visit, start = cut))
+    }
+  })
 
   # ---- quitting ------------------------------------------------------------
   observeEvent(input$quit, {
@@ -2052,19 +2250,33 @@ server <- function(input, output, session) {
   # detached -- so this re-renders while one is outstanding. ph_visit_waiting()
   # bounds that: a WebM recording can never be transcribed, and one whose
   # transcription failed stops being waited for, so neither polls on.
-  transcript_html <- function(rel_path, visit) {
+  transcript_html <- function(rel_path, visit, slots = function() integer(0)) {
     timed <- ph_transcript_timed(cfg, rel_path, visit)
     if (nrow(timed)) {
       spk <- ph_speakers_read(cfg, rel_path, visit)
-      j <- match(round(timed$start, 2), round(spk$start, 2))
-      name <- ifelse(is.na(j), "", spk$speaker[j])
-      # A guess is dimmed; a person's answer is not. The chip sits outside the
-      # phrase span so clicking it names the speaker rather than seeking the
-      # audio, which is what clicking the words does.
-      chip <- sprintf(
-        "<span class=\"ph-spk%s\" data-t0=\"%.3f\">%s</span>",
-        ifelse(!is.na(j) & spk$source[j] %in% "auto", " guess", ""),
-        timed$start, ph_escape(ifelse(nzchar(name), name, "+")))
+      run <- ph_speaker_runs(timed, spk)
+      # A chip marks where the voice changed, so there is one per run rather
+      # than one per phrase: a name printed once a sentence buries the only
+      # thing the transcript has to show. It sits outside the phrase span, so
+      # clicking it names the speaker rather than seeking the audio, which is
+      # what clicking the words does.
+      named <- nzchar(run$speaker)
+      # Asked for only when a name is on screen to colour. Working out which
+      # voice holds which colour means reading the whole session, and this
+      # render is in the same flush as the tag fields being seeded: a
+      # transcript nobody has named yet must not make typing wait on it.
+      slot <- if (any(named)) unname(slots()[run$speaker]) else NA_integer_
+      slot <- rep_len(slot, length(named))
+      slot[is.na(slot)] <- 0L
+      # Filled only where a person named every phrase the chip covers: a filled
+      # chip says this much is ground truth, and must not overstate. Unnamed
+      # keeps the neutral pill; so does a voice past the last colour.
+      cls <- paste0("ph-spk", ifelse(named & !run$all_manual, " guess", ""),
+                    ifelse(named & slot > 0L, paste0(" s", slot), ""))
+      chip <- ifelse(run$lead, sprintf(
+        "<span class=\"%s\" data-t0=\"%.3f\">%s</span>",
+        cls, timed$start,
+        ph_escape(ifelse(named, run$speaker, "+"))), "")
       return(div(class = "ph-tx", id = sprintf("ph-tx-%d", visit),
                  `data-rel` = rel_path, `data-visit` = as.integer(visit),
                  HTML(paste(paste0(chip, sprintf(
@@ -2097,6 +2309,20 @@ server <- function(input, output, session) {
                    logical(1)))) {
       invalidateLater(2000, session)
     }
+    # Which voice gets which colour is a property of the session, and the
+    # visits to one photograph usually belong to different ones. Worked out
+    # once per session rather than once per visit, and only for as long as this
+    # render lasts: naming a phrase can change it.
+    seen <- new.env(parent = emptyenv())
+    slots_for <- function(rel_path, visit) function() {
+      sess <- ph_visit_session(cfg, rel_path, visit)
+      if (is.null(sess)) return(integer(0))
+      hit <- seen[[sess]]
+      if (!is.null(hit)) return(hit)
+      out <- ph_speaker_slots(cfg, sess)
+      assign(sess, out, envir = seen)
+      out
+    }
     rows <- lapply(v, function(s) {
       url <- if (!is.na(s$audio_path)) {
         sprintf("sidecars/%s/%s", ph_url_path(r$rel_path),
@@ -2116,7 +2342,7 @@ server <- function(input, output, session) {
               if (!is.null(url))
                 tags$audio(id = sprintf("ph-a-%d", s$visit), controls = NA,
                            preload = "none", src = url)),
-          transcript_html(r$rel_path, s$visit),
+          transcript_html(r$rel_path, s$visit, slots_for(r$rel_path, s$visit)),
           if (nzchar(said)) div(class = "said", said))
     })
     # data-photo: visit numbers start again at 1 for every photograph, so

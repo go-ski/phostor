@@ -217,6 +217,12 @@ async function zoomOf(page) {
 
 // Where the photograph's own pixels are on screen, transform included.
 async function photoBox(page) {
+  // The visits panel under the photograph arrives in a later flush than the
+  // page does, and the frame gives up height when it lands. Every geometry
+  // assertion goes through here, so waiting once means none of them compares a
+  // measurement taken before the panel with one taken after. Attached rather
+  // than visible: presentation mode hides the panel but keeps it in the DOM.
+  await page.waitForSelector('.ph-hist', { state: 'attached' });
   return page.evaluate(() => {
     const r = document.getElementById('ph-photo').getBoundingClientRect();
     const f = document.querySelector('.ph-img-wrap').getBoundingClientRect();

@@ -34,6 +34,12 @@ ph_speaker_min_secs <- 0.6
 # session with too few labels to calibrate from.
 ph_speaker_min_margin <- 1e-4
 
+ph_speakers_read_empty <- function() {
+  data.frame(start = numeric(0), end = numeric(0), speaker = character(0),
+             source = character(0), confidence = numeric(0),
+             stringsAsFactors = FALSE)
+}
+
 ph_speakers_path <- function(cfg, rel_path, visit) {
   file.path(ph_visit_dir(cfg, rel_path),
             paste0(ph_visit_stem(visit), "-speakers.tsv"))
@@ -117,9 +123,7 @@ ph_speakers_names <- function(config, session_dir) {
 #' @export
 ph_speakers_read <- function(config, rel_path, visit) {
   cfg <- ph_as_config(config)
-  empty <- data.frame(start = numeric(0), end = numeric(0),
-                      speaker = character(0), source = character(0),
-                      confidence = numeric(0), stringsAsFactors = FALSE)
+  empty <- ph_speakers_read_empty()
   path <- ph_speakers_path(cfg, rel_path, visit)
   if (!file.exists(path)) return(empty)
   x <- tryCatch(
@@ -201,10 +205,15 @@ ph_named_counts <- function(cfg) {
   if (!dir.exists(cfg$sidecar_dir)) {
     return(list(total = 0L, named = 0L, manual = 0L))
   }
+  # Relative, so the photograph and visit a transcript belongs to can be read
+  # back off its path: a correction can divide one phrase into two, so the
+  # count has to come from the phrases as read rather than the lines on disk.
   tsv <- list.files(cfg$sidecar_dir, pattern = "^visit-[0-9]+[.]tsv$",
-                    recursive = TRUE, full.names = TRUE)
+                    recursive = TRUE)
   total <- sum(vapply(tsv, function(f) {
-    max(0L, length(readLines(f, warn = FALSE)) - 1L)
+    nrow(ph_transcript_timed(cfg, dirname(f),
+                             as.integer(sub("^visit-0*([0-9]+)[.]tsv$", "\\1",
+                                            basename(f)))))
   }, integer(1)))
   spk <- list.files(cfg$sidecar_dir, pattern = "^visit-[0-9]+-speakers[.]tsv$",
                     recursive = TRUE, full.names = TRUE)
@@ -217,6 +226,109 @@ ph_named_counts <- function(cfg) {
   src <- unlist(rows, use.names = FALSE)
   list(total = as.integer(total), named = length(src),
        manual = sum(src == "manual"))
+}
+
+# How many voices get a colour of their own. Four, because that is as many as
+# the palette can hold and still keep every pair of chips apart on this
+# background -- see the note beside --ph-s1 in the app's stylesheet. Past the
+# fourth a voice keeps its name and loses its hue, which is a scanning aid
+# rather than the way anyone is identified.
+ph_speaker_slot_n <- 4L
+
+#' Which phrases open a run, and which merely continue one.
+#'
+#' A chip under every phrase prints a name once per sentence, which buries the
+#' one thing worth seeing: where the voice changed. So a chip is shown only
+#' where a run begins, and a run is a maximal stretch of consecutive phrases
+#' naming one person.
+#'
+#' Runs break on the name alone. A hand-given name followed by the same name
+#' guessed is still one person talking, and a chip there would say the speaker
+#' changed when nobody did. What the change in provenance does affect is
+#' `all_manual`, which is `TRUE` only when every phrase in the run was named by
+#' a person -- so a chip drawn as ground truth never covers a guess.
+#'
+#' An unnamed phrase is a run of its own, so it always keeps a chip and stays
+#' nameable.
+#'
+#' Pure, and takes the two frames rather than a project, so the rule can be
+#' tested on its own.
+#'
+#' @param timed Phrases, from [ph_transcript_timed()].
+#' @param labels Speaker labels, from [ph_speakers_read()].
+#' @return A data.frame with one row per phrase: `speaker` (`""` when unnamed),
+#'   `source`, `run` (an integer id), `lead` (does this phrase open its run) and
+#'   `all_manual`.
+#' @examples
+#' timed <- data.frame(start = c(0, 2, 4), end = c(2, 4, 6),
+#'                     text = c("a", "b", "c"))
+#' labels <- data.frame(start = c(0, 2), end = c(2, 4),
+#'                      speaker = c("Beth", "Beth"),
+#'                      source = c("manual", "auto"), confidence = c(1, 0.5))
+#' ph_speaker_runs(timed, labels)
+#' @export
+ph_speaker_runs <- function(timed, labels) {
+  empty <- data.frame(speaker = character(0), source = character(0),
+                      run = integer(0), lead = logical(0),
+                      all_manual = logical(0), stringsAsFactors = FALSE)
+  n <- if (is.data.frame(timed)) nrow(timed) else 0L
+  if (!n) return(empty)
+  if (!is.data.frame(labels)) labels <- ph_speakers_read_empty()
+  j <- match(ph_time_key(timed$start), ph_time_key(labels$start))
+  speaker <- trimws(ifelse(is.na(j), "", as.character(labels$speaker[j])))
+  source <- ifelse(is.na(j), "", as.character(labels$source[j]))
+  # An unnamed phrase never continues anything, so nzchar() is what keeps a
+  # stretch of "+" chips from collapsing into one.
+  same <- c(FALSE, speaker[-1] == speaker[-n] & nzchar(speaker[-1]))
+  run <- cumsum(!same)
+  manual <- source == "manual"
+  by_run <- vapply(split(manual, run), all, logical(1))
+  data.frame(speaker = speaker, source = source, run = run, lead = !same,
+             all_manual = unname(by_run[as.character(run)]),
+             stringsAsFactors = FALSE)
+}
+
+#' A colour slot for each voice in a session.
+#'
+#' Chips carry a hue so that turn-taking can be read at a glance. Slots are
+#' handed out in the order the voices are first heard in the session, and never
+#' cycled: a fifth voice keeps its name and gets no hue, rather than borrowing
+#' the first voice's colour and putting two people in one colour.
+#'
+#' Ordering by first appearance means a voice named later, whose first phrase
+#' falls early in the session, takes its place ahead of voices already coloured
+#' and shifts them along. That is rare, it settles once the voices are known,
+#' and it is the price of never letting two people collide on one colour.
+#'
+#' A session, not a project: voices are learned within one anyway
+#' ([ph_speakers_apply()]), and a colour that meant one person on Tuesday and
+#' another on Friday would be worse than none.
+#'
+#' @param config A work directory, a config path, or a config list.
+#' @param session_dir A session, from [ph_sessions()].
+#' @return A named integer vector of slot numbers, `1` upwards, `0` for a voice
+#'   past the last slot. Empty when nothing in the session is named.
+#' @examples
+#' \dontrun{
+#' ph_speaker_slots("~/phostor/family", ph_sessions()$dir[1])
+#' }
+#' @export
+ph_speaker_slots <- function(config, session_dir) {
+  cfg <- ph_as_config(config)
+  if (is.null(session_dir) || !dir.exists(session_dir)) return(integer(0))
+  pl <- ph_playlist(cfg, session_dir)
+  if (!nrow(pl)) return(integer(0))
+  # The label files are written sorted by start and read back that way, so the
+  # order a voice is first heard in needs nothing but the labels themselves --
+  # no transcript, and no audio. This runs on every render of the panel.
+  heard <- unlist(lapply(seq_len(nrow(pl)), function(i) {
+    nm <- trimws(ph_speakers_read(cfg, pl$rel_path[i], pl$visit[i])$speaker)
+    nm[nzchar(nm)]
+  }), use.names = FALSE)
+  nm <- unique(as.character(heard))
+  if (!length(nm)) return(integer(0))
+  stats::setNames(as.integer(ifelse(seq_along(nm) <= ph_speaker_slot_n,
+                                    seq_along(nm), 0L)), nm)
 }
 
 # --------------------------------------------------------------------------

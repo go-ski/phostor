@@ -247,7 +247,8 @@ test('a phrase can be told who said it', async ({ page }) => {
   await H.openPhoto(page, id);
   await page.waitForSelector(`#ph-tx-${visit} .ph-ph`);
 
-  // Every phrase offers a chip; an unnamed one reads "+".
+  // A chip marks where the voice changed, and nothing is named yet, so every
+  // phrase is a change of its own and every one offers a chip reading "+".
   const chips = page.locator(`#ph-tx-${visit} .ph-spk`);
   await expect(chips).toHaveCount(PHRASES.length);
   await expect(chips.first()).toHaveText('+');
@@ -353,4 +354,172 @@ test('naming a phrase says why the names will not spread', async ({ page }) => {
   // And the name was saved regardless: never raising is still the rule.
   await expect(page.locator(`#ph-tx-${visit} .ph-spk`).first())
     .toHaveText('Nana Vera');
+});
+
+// Name a phrase through the dialog, given its chip.
+async function nameVia(page, chip, name) {
+  await chip.click();
+  await page.waitForSelector('.modal-content');
+  await page.click('#speaker_name + .selectize-control .selectize-input');
+  await page.keyboard.type(name);
+  await page.keyboard.press('Enter');
+  await page.click('#speaker_save');
+  await page.waitForSelector('.modal-content', { state: 'detached' });
+}
+
+test('one voice carrying on gets one chip, not one per sentence', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  if (H.sessionCount() === 0) await H.recordShortSession(page);
+  const { id, visit } = plantTranscript();
+  for (const f of H.visitFiles('-speakers.tsv')) fs.unlinkSync(f);
+
+  await page.reload();
+  await page.waitForSelector('.ph-tree');
+  await H.openPhoto(page, id);
+  await page.waitForSelector(`#ph-tx-${visit} .ph-spk`);
+
+  const chips = page.locator(`#ph-tx-${visit} .ph-spk`);
+  await expect(chips).toHaveCount(3);
+
+  await nameVia(page, chips.first(), 'Nana Vera');
+  await expect(chips.first()).toHaveText('Nana Vera');
+  // The same person again: the second sentence stops carrying a chip, because
+  // nobody changed.
+  await nameVia(page, chips.nth(1), 'Nana Vera');
+  await expect(chips).toHaveCount(2);
+  await expect(chips.first()).toHaveText('Nana Vera');
+  await expect(chips.nth(1)).toHaveText('+');
+
+  // The run is a person's own answer throughout, so it is filled rather than
+  // dashed, and carries that voice's colour.
+  await expect(chips.first()).toHaveClass(/\bs1\b/);
+  await expect(chips.first()).not.toHaveClass(/\bguess\b/);
+
+  // A different voice is a change, so a chip comes back -- in its own colour.
+  await nameVia(page, chips.nth(1), 'Uncle Stefan');
+  await expect(chips).toHaveCount(2);
+  await expect(chips.nth(1)).toHaveText('Uncle Stefan');
+  await expect(chips.nth(1)).toHaveClass(/\bs2\b/);
+});
+
+test('Same as above takes a chip away', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  const { id, visit } = plantTranscript();
+  for (const f of H.visitFiles('-speakers.tsv')) fs.unlinkSync(f);
+
+  await page.reload();
+  await page.waitForSelector('.ph-tree');
+  await H.openPhoto(page, id);
+  await page.waitForSelector(`#ph-tx-${visit} .ph-spk`);
+  const chips = page.locator(`#ph-tx-${visit} .ph-spk`);
+  await nameVia(page, chips.first(), 'Nana Vera');
+
+  await chips.nth(1).click();
+  await page.waitForSelector('.modal-content');
+  await expect(page.locator('#speaker_same')).toContainText('Nana Vera');
+  await page.click('#speaker_same');
+  await page.waitForSelector('.modal-content', { state: 'detached' });
+  await expect(chips).toHaveCount(2);
+
+  // Written as a person's answer, so tidying the transcript also teaches.
+  const f = H.visitFiles('-speakers.tsv')[0];
+  const rows = fs.readFileSync(f, 'utf8').trim().split('\n');
+  expect(rows.length).toBe(3);
+  expect(rows.filter((r) => r.includes('manual')).length).toBe(2);
+});
+
+test('a sentence holding two voices can be divided', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  const { id, visit } = plantTranscript();
+  for (const f of H.visitFiles('-speakers.tsv')) fs.unlinkSync(f);
+  for (const f of H.visitFiles('-edits.tsv')) fs.unlinkSync(f);
+
+  await page.reload();
+  await page.waitForSelector('.ph-tree');
+  await H.openPhoto(page, id);
+  await page.waitForSelector(`#ph-tx-${visit} .ph-ph`);
+  const phrases = page.locator(`#ph-tx-${visit} .ph-ph`);
+  await expect(phrases).toHaveCount(PHRASES.length);
+
+  // Double-click opens the correction dialog; single click seeks the audio,
+  // which is why it takes the second one.
+  await phrases.first().dblclick();
+  await page.waitForSelector('.modal-content');
+  await expect(page.locator('.modal-content')).toContainText('Correct this phrase');
+
+  await page.fill('#phrase_before', 'This was taken');
+  await page.fill('#phrase_after', 'down by the river');
+  await page.fill('#phrase_split_at', '1.2');
+  await page.click('#phrase_split');
+
+  // Dividing a sentence is only ever done because the voice changed, so it
+  // goes straight on to ask who the second half was.
+  await page.waitForSelector('.modal-content');
+  await expect(page.locator('.modal-content')).toContainText('Who said this?');
+  await page.click('#speaker_name + .selectize-control .selectize-input');
+  await page.keyboard.type('Uncle Stefan');
+  await page.keyboard.press('Enter');
+  await page.click('#speaker_save');
+  await page.waitForSelector('.modal-content', { state: 'detached' });
+
+  await expect(phrases).toHaveCount(PHRASES.length + 1);
+  await expect(phrases.nth(0)).toHaveText('This was taken');
+  await expect(phrases.nth(1)).toHaveText('down by the river');
+
+  // The correction is in its own file: visit-NNNN.tsv belongs to the
+  // transcriber and is never rewritten, so `transcribe --force` cannot undo
+  // this and this cannot undo that.
+  const f = H.visitFiles('-edits.tsv')[0];
+  expect(f, 'no edits file was written').toBeDefined();
+  const rows = fs.readFileSync(f, 'utf8').trim().split('\n');
+  expect(rows[0]).toBe('orig\tstart\tend\ttext');
+  expect(rows[1]).toBe('0.000\t0.000\t1.200\tThis was taken');
+  expect(rows[2]).toBe('0.000\t1.200\t2.500\tdown by the river');
+
+  const tsv = H.visitFiles('.tsv')
+    .filter((x) => /^visit-\d+\.tsv$/.test(path.basename(x)));
+  expect(fs.readFileSync(tsv[0], 'utf8')).toContain(PHRASES[0].text);
+});
+
+test('the dialog never arrives with a name nobody chose', async ({ page }) => {
+  // A <select> whose selected value is not among its options falls back to the
+  // first one. With names already known, opening this on an unnamed phrase
+  // used to arrive with whoever sorts first already chosen, and Save then
+  // attributed the phrase to them. A hand label is ground truth and the voices
+  // are learned from it, so a name nobody typed is worse here than elsewhere.
+  await page.goto('/');
+  await page.waitForSelector('.ph-tree');
+  if (H.sessionCount() === 0) await H.recordShortSession(page);
+  const { id, visit } = plantTranscript();
+  for (const f of H.visitFiles('-speakers.tsv')) fs.unlinkSync(f);
+  for (const f of H.visitFiles('-edits.tsv')) fs.unlinkSync(f);
+
+  await page.reload();
+  await page.waitForSelector('.ph-tree');
+  await H.openPhoto(page, id);
+  await page.waitForSelector(`#ph-tx-${visit} .ph-spk`);
+  const chips = page.locator(`#ph-tx-${visit} .ph-spk`);
+  await nameVia(page, chips.first(), 'Aaron');
+
+  // A different phrase, with a name now in the picker.
+  await chips.nth(1).click();
+  await page.waitForSelector('.modal-content');
+  expect(await page.evaluate(
+    () => document.getElementById('speaker_name').value)).toBe('');
+  await page.click('.modal-footer button:has-text("Cancel")');
+  await page.waitForSelector('.modal-content', { state: 'detached' });
+
+  // And nothing was written for it.
+  const rows = fs.readFileSync(H.visitFiles('-speakers.tsv')[0], 'utf8')
+    .trim().split('\n');
+  expect(rows.length).toBe(2);
+  expect(rows[1]).toContain('Aaron');
+
+  // A divided phrase outlives this file, and the later ones assert on the same
+  // work directory. The label files are left alone -- the specs above this one
+  // make those too, and they are part of what the rest expect to find.
+  for (const f of H.visitFiles('-edits.tsv')) fs.unlinkSync(f);
 });
